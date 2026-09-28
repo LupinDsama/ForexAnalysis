@@ -1,0 +1,6 @@
+name = "xau-ai-backend"
+main = "index.js"
+compatibility_date = "2026-09-28"
+
+[observability]
+enabled = true

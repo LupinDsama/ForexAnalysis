@@ -1,0 +1,132 @@
+.app {
+  min-height: 100vh;
+  background: #0b0f19;
+  color: #e5e7eb;
+  font-family: system-ui, sans-serif;
+}
+
+.app header {
+  padding: 16px 24px;
+  border-bottom: 1px solid #1f2937;
+}
+
+.app h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  letter-spacing: 2px;
+}
+
+.controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.controls button {
+  background: #111827;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.quota {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.quota .warn {
+  color: #f59e0b;
+}
+
+.app main {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  padding: 16px 24px;
+}
+
+.chart-panel, .ai-panel {
+  background: #0f172a;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.chart-hidden {
+  height: 500px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+}
+
+.status {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.analysis {
+  border-bottom: 1px solid #1f2937;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
+
+.muted {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.chat .history {
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.chat .history .ai {
+  color: #a5b4fc;
+}
+
+.chat-box {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-box textarea {
+  flex: 1;
+  min-height: 60px;
+  background: #111827;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.chat-box button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.error {
+  margin: 12px 24px 0;
+  background: #7f1d1d;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .app main {
+    grid-template-columns: 1fr;
+  }
+}

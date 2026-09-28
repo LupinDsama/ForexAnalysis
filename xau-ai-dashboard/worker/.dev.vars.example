@@ -1,0 +1,5 @@
+# Local dev secrets (gitignored). Copy from example:
+#   copy .dev.vars.example .dev.vars  (Windows)
+# Then fill real keys. Never commit .dev.vars.
+TWELVE_DATA_API_KEY=
+GEMINI_API_KEY=
