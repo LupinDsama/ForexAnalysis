@@ -24,6 +24,12 @@ const TIMEFRAMES = [
   { key: "4h", label: "4H", interval: "4h", refreshMs: 1_800_000 },
 ];
 
+function formatCountdown(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, "0")}`;
+}
+
 function App() {
   const [chartVisible, setChartVisible] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -36,6 +42,8 @@ function App() {
   const [asking, setAsking] = useState(false);
   const [quota, setQuota] = useState(() => getQuotaInfo());
   const [storage, setStorage] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [nextAt, setNextAt] = useState({});
 
   async function refreshStorage() {
     try {
@@ -47,6 +55,21 @@ function App() {
 
   useEffect(() => {
     refreshStorage();
+  }, []);
+
+  // Realtime 1s ticker for refresh countdowns.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Seed countdown targets so tabs show a timer immediately.
+  useEffect(() => {
+    setNextAt(
+      Object.fromEntries(
+        TIMEFRAMES.map((tf) => [tf.key, Date.now() + tf.refreshMs])
+      )
+    );
   }, []);
 
   const loadTF = useCallback(async (tf) => {
@@ -68,6 +91,7 @@ function App() {
       setError(`${tf.label}: ${e.message}`);
     } finally {
       setUpdating((u) => ({ ...u, [tf.key]: false }));
+      setNextAt((n) => ({ ...n, [tf.key]: Date.now() + tf.refreshMs }));
     }
   }, []);
 
@@ -157,9 +181,14 @@ function App() {
                 key={tf.key}
                 className={tf.key === activeTF ? "active" : ""}
                 onClick={() => setActiveTF(tf.key)}
+                title={`Auto refresh every ${tf.refreshMs / 60000} min`}
               >
                 {tf.label}
-                {updating[tf.key] ? " ●" : ""}
+                {updating[tf.key]
+                  ? " ●"
+                  : autoRefresh && nextAt[tf.key]
+                    ? ` ${formatCountdown(nextAt[tf.key] - now)}`
+                    : ""}
               </button>
             ))}
             <button
