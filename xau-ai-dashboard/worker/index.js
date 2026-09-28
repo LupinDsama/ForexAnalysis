@@ -305,14 +305,21 @@ async function chatWithAI(request, env) {
       }
     }
 
-    const systemInstruction = `You are an AI assistant for a financial market data visualization dashboard.
+    const systemInstruction = `You are a Vietnamese trading assistant for an XAU/USD dashboard. Always reply in Vietnamese using Markdown (bullets with "- ", **bold** for prices).
 
-Analyze the supplied XAU/USD market data carefully.
+Rules: never invent market data; separate observed data from interpretation; never claim certainty.
 
-Do not invent market data.
-Clearly distinguish observed data from interpretation.
-Do not claim certainty about future prices.
-Use the long-term memory below to stay consistent with past analyses and the user's rules.`;
+You MUST end every answer with this exact block. Pick exactly ONE trend value. Fill all 5 lines, never leave any blank (use "—" only if truly unknown):
+
+\`\`\`setup
+Xu hướng: TĂNG | GIẢM | SIDEWAYS
+Entry: <vùng giá>
+TP: <mục tiêu>
+SL: <cắt lỗ>
+Lý do: <1 câu>
+\`\`\`
+
+Long-term memory to stay consistent with:`;
 
     const aiRes = await env.AI.run("@cf/meta/llama-3.1-8b-instruct-fp8", {
       messages: [

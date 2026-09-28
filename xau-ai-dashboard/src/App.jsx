@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Chart from "./components/Chart";
 import Controls from "./components/Controls";
 import Analysis from "./components/Analysis";
@@ -39,6 +39,7 @@ function App() {
   const [asking, setAsking] = useState(false);
   const [quota, setQuota] = useState(() => getQuotaInfo());
   const [storage, setStorage] = useState(null);
+  const chartRef = useRef(null);
 
   async function refreshStorage() {
     try {
@@ -109,6 +110,8 @@ function App() {
     if (!question.trim() || asking) return;
     const q = question.trim();
     setQuestion("");
+    // Snapshot the visible chart — attached to the AI reply below.
+    const shot = chartRef.current?.screenshot?.() || null;
     setHistory((h) => [...h, { role: "user", text: q }]);
     setAsking(true);
     try {
@@ -123,7 +126,13 @@ function App() {
       const text =
         result?.candidates?.[0]?.content?.parts?.[0]?.text ||
         "AI returned no response.";
-      setHistory((h) => [...h, { role: "ai", text }]);
+      setHistory((h) => {
+        // Keep screenshots only on recent messages to bound memory.
+        const pruned = h.map((m, idx) =>
+          m.shot && idx < h.length - 4 ? { ...m, shot: null } : m
+        );
+        return [...pruned, { role: "ai", text, shot }];
+      });
       if (result?.storage) setStorage(result.storage);
     } catch (e) {
       setHistory((h) => [...h, { role: "ai", text: `Error: ${e.message}` }]);
@@ -179,7 +188,7 @@ function App() {
           </div>
 
           {chartVisible ? (
-            <Chart key={activeTF} data={data[activeTF]} />
+            <Chart key={activeTF} ref={chartRef} data={data[activeTF]} />
           ) : (
             <div className="chart-hidden">Chart hidden</div>
           )}

@@ -1,10 +1,21 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { createChart, CandlestickSeries } from "lightweight-charts";
 
-export default function Chart({ data }) {
+const Chart = forwardRef(function Chart({ data }, ref) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
+
+  useImperativeHandle(ref, () => ({
+    screenshot() {
+      try {
+        const canvas = chartRef.current?.takeScreenshot?.();
+        return canvas ? canvas.toDataURL("image/png") : null;
+      } catch {
+        return null;
+      }
+    },
+  }));
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -58,4 +69,6 @@ export default function Chart({ data }) {
       style={{ width: "100%", height: "500px" }}
     />
   );
-}
+});
+
+export default Chart;
