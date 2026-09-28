@@ -34,7 +34,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/xauusd") {
-      return getXAUUSD(env);
+      return getXAUUSD(env, url.searchParams.get("interval"));
     }
 
     if (url.pathname === "/api/chat") {
@@ -137,6 +137,20 @@ async function storageInfoResponse(env) {
   return json(await storageInfo(env.DB));
 }
 
+function describeMarket(marketData) {
+  // Returns { text, snapshot } where snapshot is a JSON string or null.
+  if (Array.isArray(marketData)) {
+    const compact = compactCandles(marketData);
+    if (!compact.length) return { text: "[]", snapshot: null };
+    return { text: JSON.stringify(compact), snapshot: JSON.stringify(compact) };
+  }
+  if (marketData && typeof marketData === "object") {
+    const text = JSON.stringify(marketData).slice(0, 4000);
+    return { text, snapshot: text };
+  }
+  return { text: "[]", snapshot: null };
+}
+
 function compactCandles(candles) {
   if (!Array.isArray(candles)) return [];
   return candles
@@ -179,11 +193,16 @@ async function loadContext(db) {
   }
   if (snap?.data) {
     try {
-      const arr = JSON.parse(snap.data);
-      const last = arr[arr.length - 1];
-      block +=
-        `[LATEST SAVED SNAPSHOT @${snap.taken_at}] ` +
-        `${arr.length} candles 1m, last close ${last?.[4]}.\n`;
+      const parsed = JSON.parse(snap.data);
+      const arr = Array.isArray(parsed) ? parsed : parsed.candles;
+      if (Array.isArray(arr) && arr.length) {
+        const last = arr[arr.length - 1];
+        const close = Array.isArray(last) ? last[4] : last?.close;
+        const label = parsed.tf ? ` (${parsed.tf})` : "";
+        block +=
+          `[LATEST SAVED SNAPSHOT${label} @${snap.taken_at}] ` +
+          `${arr.length} candles, last close ${close}.\n`;
+      }
     } catch {
       // ignore corrupt snapshot
     }
@@ -205,14 +224,19 @@ async function pruneMemories(db) {
 
 // ---------- routes ----------
 
-async function getXAUUSD(env) {
+const ALLOWED_INTERVALS = ["1min", "5min", "1h", "4h"];
+
+async function getXAUUSD(env, interval) {
   if (!env.TWELVE_DATA_API_KEY) {
     return json({ error: "Missing TWELVE_DATA_API_KEY secret" }, 500);
+  }
+  if (!ALLOWED_INTERVALS.includes(interval)) {
+    interval = "1min";
   }
 
   const apiUrl = new URL("https://api.twelvedata.com/time_series");
   apiUrl.searchParams.set("symbol", "XAU/USD");
-  apiUrl.searchParams.set("interval", "1min");
+  apiUrl.searchParams.set("interval", interval);
   apiUrl.searchParams.set("outputsize", "200");
   apiUrl.searchParams.set("apikey", env.TWELVE_DATA_API_KEY);
 
@@ -266,19 +290,18 @@ async function chatWithAI(request, env) {
 
     let memoryBlock = "";
     let storage = null;
+    const md = describeMarket(marketData);
     if (env.DB) {
       await ensureSchema(env.DB);
       memoryBlock = await loadContext(env.DB);
 
-      const compact = compactCandles(marketData);
-      if (compact.length) {
-        const s = JSON.stringify(compact);
+      if (md.snapshot) {
         await env.DB.prepare(
           `INSERT INTO snapshots(data) VALUES(?)`
         )
-          .bind(s)
+          .bind(md.snapshot)
           .run();
-        await addUsage(env.DB, byteLen(s));
+        await addUsage(env.DB, byteLen(md.snapshot));
       }
     }
 
@@ -301,7 +324,7 @@ Use the long-term memory below to stay consistent with past analyses and the use
             "User question:\n" +
             prompt +
             "\n\nCurrent market data:\n" +
-            JSON.stringify(compactCandles(marketData)),
+            md.text,
         },
       ],
     });

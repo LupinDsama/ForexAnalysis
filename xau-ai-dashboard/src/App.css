@@ -57,6 +57,31 @@
   padding: 16px;
 }
 
+.tf-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tf-tabs button {
+  background: #111827;
+  color: #9ca3af;
+  border: 1px solid #374151;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tf-tabs button.active {
+  background: #1d4ed8;
+  color: white;
+  border-color: #1d4ed8;
+}
+
+.tf-tabs .refresh-one {
+  margin-left: auto;
+}
+
 .chart-hidden {
   height: 500px;
   display: flex;

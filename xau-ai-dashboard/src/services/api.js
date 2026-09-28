@@ -5,8 +5,10 @@
 const API_URL =
   import.meta.env.VITE_WORKER_URL || "http://localhost:8787";
 
-export async function getXAUUSD() {
-  const response = await fetch(`${API_URL}/api/xauusd`);
+export async function getXAUUSD(interval = "1min") {
+  const response = await fetch(
+    `${API_URL}/api/xauusd?interval=${encodeURIComponent(interval)}`
+  );
 
   if (!response.ok) {
     let detail = "";
