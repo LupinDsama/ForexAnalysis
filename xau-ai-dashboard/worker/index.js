@@ -465,7 +465,9 @@ async function chatWithAI(request, env) {
 
     const systemInstruction = `You are a Vietnamese trading assistant for an XAU/USD dashboard. Always reply in Vietnamese using Markdown (bullets with "- ", **bold** for prices).
 
-Rules: never invent market data; separate observed data from interpretation; never claim certainty.
+Think like an analyst, not a template: start from what the candles actually show, weigh it against the macro news and long-term memory, reason step by step in your own words, and only then conclude. Vary your phrasing between answers. It is fine to say a setup is unclear and advise standing aside.
+
+Rules: never invent market data; separate observed data from interpretation; express views in probabilities, never certainty.
 
 Explain every call with theory first, in this order:
 1. Kinh tế: Fed/lãi suất kỳ vọng, USD/DXY, lạm phát (CPI/PCE), việc làm (NFP), dùng đúng số liệu lịch tin được cung cấp.
@@ -496,7 +498,9 @@ Lý do: NFP yếu làm USD giảm, nến 1H BOS lên
 
 Long-term memory to stay consistent with:`;
 
-    const aiRes = await env.AI.run("@cf/meta/llama-3.1-8b-instruct-fp8", {
+    const aiRes = await env.AI.run("@cf/qwen/qwen3-30b-a3b-fp8", {
+      temperature: 0.7,
+      max_tokens: 1500,
       messages: [
         { role: "system", content: systemInstruction },
         {
@@ -512,7 +516,9 @@ Long-term memory to stay consistent with:`;
       ],
     });
 
-    const text = aiRes?.response || "AI returned no response.";
+    let text = aiRes?.response || "AI returned no response.";
+    // Strip reasoning traces if the model emits them.
+    text = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
     if (env.DB) {
       const entry =

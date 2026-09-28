@@ -142,7 +142,7 @@
 
 .app main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
   padding: 20px clamp(10px, 2vw, 28px) 32px;
 }
