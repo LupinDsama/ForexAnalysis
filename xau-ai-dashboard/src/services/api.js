@@ -1,31 +1,79 @@
-const API_URL =
-  import.meta.env.VITE_WORKER_URL || "http://localhost:8787";
+// Direct browser calls (Phase 1 local/demo).
+// Keys come from Vite env (.env, gitignored) — never commit real keys.
+// NOTE: keys are visible in shipped JS. For public deploy, prefer the
+// Cloudflare Worker proxy in worker/ (keeps secrets server-side).
+
+const TWELVE_KEY = import.meta.env.VITE_TWELVE_DATA_API_KEY || "";
+const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+const GEMINI_MODEL = "gemini-2.0-flash";
 
 export async function getXAUUSD() {
-  const response = await fetch(`${API_URL}/api/xauusd`);
-
-  if (!response.ok) {
-    let detail = "";
-    try {
-      detail = JSON.stringify(await response.json());
-    } catch {
-      // ignore
-    }
-    throw new Error(`Failed to fetch XAU/USD (${response.status}) ${detail}`);
+  if (!TWELVE_KEY) {
+    throw new Error("Missing VITE_TWELVE_DATA_API_KEY in .env");
   }
 
-  return response.json();
+  const apiUrl = new URL("https://api.twelvedata.com/time_series");
+  apiUrl.searchParams.set("symbol", "XAU/USD");
+  apiUrl.searchParams.set("interval", "1min");
+  apiUrl.searchParams.set("outputsize", "200");
+  apiUrl.searchParams.set("apikey", TWELVE_KEY);
+
+  const response = await fetch(apiUrl);
+
+  if (!response.ok) {
+    throw new Error(`Twelve Data request failed (${response.status})`);
+  }
+
+  const data = await response.json();
+
+  if (data.status === "error") {
+    throw new Error(data.message || "Twelve Data error");
+  }
+
+  return data;
 }
 
 export async function askAI(prompt, marketData) {
-  const response = await fetch(`${API_URL}/api/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, marketData }),
-  });
+  if (!GEMINI_KEY) {
+    throw new Error("Missing VITE_GEMINI_API_KEY in .env");
+  }
+
+  const systemInstruction = `You are an AI assistant for a financial market data visualization dashboard.
+
+Analyze the supplied XAU/USD market data carefully.
+
+Do not invent market data.
+Clearly distinguish observed data from interpretation.
+Do not claim certainty about future prices.
+
+User question:
+${prompt}
+
+Current market data:
+${JSON.stringify(marketData)}
+`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_KEY,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: systemInstruction }],
+          },
+        ],
+      }),
+    }
+  );
 
   if (!response.ok) {
-    throw new Error("AI request failed");
+    throw new Error(`AI request failed (${response.status})`);
   }
 
   return response.json();
