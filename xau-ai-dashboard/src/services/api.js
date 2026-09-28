@@ -51,6 +51,16 @@ export async function getStorage() {
   return response.json();
 }
 
+export async function getNews(refresh = false) {
+  const response = await fetch(
+    `${API_URL}/api/news${refresh ? "?refresh=1" : ""}`
+  );
+  if (!response.ok) {
+    throw new Error("Failed to fetch news");
+  }
+  return response.json();
+}
+
 export async function saveMemory(kind, content) {
   const response = await fetch(`${API_URL}/api/memory`, {
     method: "POST",

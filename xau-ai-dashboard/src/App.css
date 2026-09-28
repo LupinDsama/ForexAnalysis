@@ -135,10 +135,10 @@
 
 .app main {
   display: grid;
-  grid-template-columns: 1.25fr 1.35fr;
+  grid-template-columns: 1fr 1.5fr;
   gap: 18px;
   padding: 20px 28px 32px;
-  max-width: 1720px;
+  max-width: 1800px;
   margin: 0 auto;
 }
 
@@ -456,6 +456,83 @@
   border-radius: 14px;
   font-size: 14px;
   max-width: 1720px;
+}
+
+/* ---------- news ---------- */
+
+.news {
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
+
+.news-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.news-head h2 {
+  flex: 1;
+}
+
+.news-head button {
+  background: var(--seg-bg);
+  color: var(--accent);
+  border: 1px solid var(--panel-border);
+  border-radius: 9px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.news-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 230px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.news-list li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+}
+
+.impact {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-top: 1px;
+}
+
+.impact.high {
+  background: rgba(255, 59, 48, 0.14);
+  color: var(--danger);
+}
+
+.impact.medium {
+  background: rgba(255, 149, 0, 0.16);
+  color: #ff9500;
+}
+
+.impact.low {
+  background: var(--seg-bg);
+  color: var(--muted);
+}
+
+.news a {
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
 }
 
 /* ---------- memory ---------- */

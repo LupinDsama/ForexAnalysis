@@ -4,6 +4,7 @@ import Controls from "./components/Controls";
 import Analysis from "./components/Analysis";
 import Chat from "./components/Chat";
 import Memory from "./components/Memory";
+import News from "./components/News";
 import {
   getXAUUSD,
   askAI,
@@ -11,6 +12,7 @@ import {
   getQuotaInfo,
   incRequestCount,
   getStorage,
+  getNews,
   saveMemory,
 } from "./services/api";
 import "./App.css";
@@ -44,6 +46,7 @@ function App() {
   const [askPhase, setAskPhase] = useState(null);
   const [quota, setQuota] = useState(() => getQuotaInfo());
   const [storage, setStorage] = useState(null);
+  const [news, setNews] = useState(null);
   const [theme, setTheme] = useState(() => {
     try {
       const saved = localStorage.getItem("xau_theme");
@@ -77,6 +80,18 @@ function App() {
 
   useEffect(() => {
     refreshStorage();
+  }, []);
+
+  async function loadNews(refresh = false) {
+    try {
+      setNews(await getNews(refresh));
+    } catch {
+      // news panel stays empty when Worker is unreachable
+    }
+  }
+
+  useEffect(() => {
+    loadNews(false);
   }, []);
 
   // Returns fresh candles, or null on failure/quota stop.
@@ -262,6 +277,7 @@ function App() {
             loading={Object.values(updating).some(Boolean)}
             lastFetch={lastFetch}
           />
+          <News news={news} onRefresh={() => loadNews(true)} />
           <Chat
             question={question}
             setQuestion={setQuestion}

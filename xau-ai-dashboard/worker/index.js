@@ -49,6 +49,19 @@ export default {
       return storageInfoResponse(env);
     }
 
+    if (url.pathname === "/api/news") {
+      if (!env.DB) return json({ error: "Missing DB binding" }, 500);
+      await ensureSchema(env.DB);
+      if (url.searchParams.get("refresh") === "1") {
+        try {
+          return json(await refreshMacroNews(env.DB));
+        } catch (e) {
+          return json({ error: e.message }, 502);
+        }
+      }
+      return json(await getMacroNews(env.DB));
+    }
+
     if (url.pathname === "/api/whereami") {
       const trace = await (
         await fetch("https://www.cloudflare.com/cdn-cgi/trace")
@@ -91,6 +104,13 @@ async function ensureSchema(db) {
       `CREATE TABLE IF NOT EXISTS meta (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      )`
+    ),
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS news_cache (
+        key TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`
     ),
     db.prepare(
@@ -210,6 +230,136 @@ async function loadContext(db) {
   return block.slice(0, 6000);
 }
 
+// ---------- macro news (ForexFactory) ----------
+
+const NEWS_TTL_MS = 60 * 60 * 1000;
+const FF_CAL_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml";
+const FF_GOLD_URL = "https://www.forexfactory.com/market/goldusd";
+
+function xmlTag(block, name) {
+  const m = new RegExp("<" + name + ">([\\s\\S]*?)</" + name + ">").exec(block);
+  if (!m) return "";
+  return m[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
+}
+
+async function fetchText(url, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { "User-Agent": "Mozilla/5.0 XAUUSD-Dashboard/1.0" },
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return await r.text();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function refreshMacroNews(db) {
+  const events = [];
+  const headlines = [];
+  try {
+    const xml = await fetchText(FF_CAL_URL, 12000);
+    const blocks = xml.match(/<event>([\s\S]*?)<\/event>/g) || [];
+    const all = blocks.map((b) => ({
+      title: xmlTag(b, "title"),
+      country: xmlTag(b, "country"),
+      date: xmlTag(b, "date"),
+      time: xmlTag(b, "time"),
+      impact: xmlTag(b, "impact"),
+      forecast: xmlTag(b, "forecast"),
+      previous: xmlTag(b, "previous"),
+    }));
+    const usd = all.filter(
+      (e) => e.country === "USD" && (e.impact === "High" || e.impact === "Medium")
+    );
+    const otherHigh = all.filter(
+      (e) => e.country !== "USD" && e.impact === "High"
+    );
+    for (const e of [...usd, ...otherHigh].slice(0, 15)) events.push(e);
+  } catch {
+    // keep stale/empty on failure
+  }
+  try {
+    const html = await fetchText(FF_GOLD_URL, 12000);
+    const re =
+      /<a[^>]*href="([^"]+)"[^>]*>([^<>]{30,180})<\/a>\s*From\s*([^<|]+?)(?:\||<)/g;
+    let m;
+    let n = 0;
+    while ((m = re.exec(html)) && n < 8) {
+      const href = m[1].startsWith("http")
+        ? m[1]
+        : "https://www.forexfactory.com" + m[1];
+      headlines.push({ title: m[2].trim(), source: m[3].trim(), url: href });
+      n++;
+    }
+  } catch {
+    // headlines are best-effort
+  }
+  const payload = JSON.stringify({
+    events,
+    headlines,
+    updated_at: new Date().toISOString(),
+  });
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO news_cache(key, payload, updated_at)
+       VALUES('macro', ?, datetime('now'))`
+    )
+    .bind(payload)
+    .run();
+  await addUsage(db, byteLen(payload));
+  return JSON.parse(payload);
+}
+
+async function getMacroNews(db) {
+  const row = await db
+    .prepare(`SELECT payload, updated_at FROM news_cache WHERE key = 'macro'`)
+    .first();
+  if (row?.payload) {
+    const age = Date.now() - new Date(row.updated_at + "Z").getTime();
+    if (age < NEWS_TTL_MS) return JSON.parse(row.payload);
+  }
+  try {
+    return await refreshMacroNews(db);
+  } catch {
+    return row?.payload
+      ? JSON.parse(row.payload)
+      : { events: [], headlines: [], updated_at: null };
+  }
+}
+
+function macroBlock(macro) {
+  if (!macro) return "";
+  let s = "[MACRO CONTEXT — ForexFactory competent sources]\n";
+  if (macro.events?.length) {
+    s +=
+      "Upcoming/key economic events:\n" +
+      macro.events
+        .map(
+          (e) =>
+            `- ${e.date} ${e.time} ${e.country} ${e.title} [${e.impact}]` +
+            (e.forecast ? ` F:${e.forecast}` : "") +
+            (e.previous ? ` P:${e.previous}` : "")
+        )
+        .join("\n")
+        .slice(0, 2000) +
+      "\n";
+  }
+  if (macro.headlines?.length) {
+    s +=
+      "Gold headlines:\n" +
+      macro.headlines
+        .map((h) => `- ${h.title} (${h.source})`)
+        .join("\n")
+        .slice(0, 1200) +
+      "\n";
+  }
+  return s.slice(0, 3200);
+}
+
 async function pruneMemories(db) {
   const row = await db
     .prepare(`SELECT COUNT(*) AS c, MAX(id) AS m FROM memories`)
@@ -291,6 +441,14 @@ async function chatWithAI(request, env) {
     let memoryBlock = "";
     let storage = null;
     const md = describeMarket(marketData);
+    let macro = "";
+    if (env.DB) {
+      try {
+        macro = macroBlock(await getMacroNews(env.DB));
+      } catch {
+        macro = "";
+      }
+    }
     if (env.DB) {
       await ensureSchema(env.DB);
       memoryBlock = await loadContext(env.DB);
@@ -308,6 +466,11 @@ async function chatWithAI(request, env) {
     const systemInstruction = `You are a Vietnamese trading assistant for an XAU/USD dashboard. Always reply in Vietnamese using Markdown (bullets with "- ", **bold** for prices).
 
 Rules: never invent market data; separate observed data from interpretation; never claim certainty.
+
+Explain every call with theory first, in this order:
+1. Kinh tế: Fed/lãi suất kỳ vọng, USD/DXY, lạm phát (CPI/PCE), việc làm (NFP), dùng đúng số liệu lịch tin được cung cấp.
+2. Chính trị/địa chính trị & tâm lý rủi ro (risk-on/off, vàng trú ẩn, NHTW mua vàng).
+3. Kỹ thuật: nêu rõ phương pháp dùng (cấu trúc BOS/CHoCH, liquidity, hỗ trợ/kháng cự...).
 
 You MUST end every answer with this exact block. Pick exactly ONE trend value. Fill all 5 lines, never leave any blank (use "—" only if truly unknown):
 
@@ -327,6 +490,7 @@ Long-term memory to stay consistent with:`;
         {
           role: "user",
           content:
+            (macro ? macro + "\n" : "") +
             (memoryBlock ? memoryBlock + "\n" : "") +
             "User question:\n" +
             prompt +
