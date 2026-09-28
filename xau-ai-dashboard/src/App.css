@@ -45,9 +45,16 @@
   --radius: 14px;
 }
 
+/* Unlock the Vite template's narrow #root so the app fills the viewport. */
+#root {
+  width: 100%;
+  max-width: none;
+  border-inline: none;
+  text-align: left;
+}
+
 .app {
-  min-height: 100vh;
-  background:
+  min-height: 100vh;  background:
     radial-gradient(1200px 400px at 20% -10%, var(--bg-glow-1), transparent),
     radial-gradient(1000px 380px at 90% 0%, var(--bg-glow-2), transparent),
     var(--bg);
