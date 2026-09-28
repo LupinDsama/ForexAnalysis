@@ -27,12 +27,27 @@ export default {
     }
 
     if (url.pathname === "/api/chat") {
-      return chatWithGemini(request, env);
+      return chatWithAI(request, env);
+    }
+
+    if (url.pathname === "/api/whereami") {
+      const trace = await (
+        await fetch("https://www.cloudflare.com/cdn-cgi/trace")
+      ).text();
+      return new Response(trace, { headers: corsHeaders });
     }
 
     return json({ ok: true, service: "XAUUSD AI Backend" });
   },
 };
+
+// Legacy stub: Durable Object instances created by an earlier version
+// still reference this class name, so it must stay exported.
+export class GeminiProxy {
+  async fetch() {
+    return new Response("gone", { status: 410 });
+  }
+}
 
 async function getXAUUSD(env) {
   if (!env.TWELVE_DATA_API_KEY) {
@@ -60,10 +75,15 @@ async function getXAUUSD(env) {
   return json(data);
 }
 
-async function chatWithGemini(request, env) {
+// Workers AI instead of Gemini: Cloudflare's egress IPs are geolocated
+// by Google to unsupported regions ("User location is not supported"),
+// no matter the Worker placement. Workers AI runs inside Cloudflare,
+// needs no API key, and stays on the free tier for personal use.
+// Response is normalized to Gemini shape so the frontend is unchanged.
+async function chatWithAI(request, env) {
   try {
-    if (!env.GEMINI_API_KEY) {
-      return json({ error: "Missing GEMINI_API_KEY secret" }, 500);
+    if (!env.AI) {
+      return json({ error: "Missing AI binding" }, 500);
     }
 
     const body = await request.json();
@@ -76,36 +96,27 @@ Analyze the supplied XAU/USD market data carefully.
 
 Do not invent market data.
 Clearly distinguish observed data from interpretation.
-Do not claim certainty about future prices.
+Do not claim certainty about future prices.`;
 
-User question:
-${prompt}
-
-Current market data:
-${JSON.stringify(marketData)}
-`;
-
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": env.GEMINI_API_KEY,
+    const aiRes = await env.AI.run("@cf/meta/llama-3.1-8b-instruct-fp8", {
+      messages: [
+        { role: "system", content: systemInstruction },
+        {
+          role: "user",
+          content:
+            "User question:\n" +
+            prompt +
+            "\n\nCurrent market data:\n" +
+            JSON.stringify(marketData),
         },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: systemInstruction }],
-            },
-          ],
-        }),
-      }
-    );
+      ],
+    });
 
-    const data = await response.json();
-    return json(data, response.ok ? 200 : 502);
+    const text = aiRes?.response || "AI returned no response.";
+
+    return json({
+      candidates: [{ content: { parts: [{ text }] } }],
+    });
   } catch (error) {
     return json({ error: error.message }, 500);
   }

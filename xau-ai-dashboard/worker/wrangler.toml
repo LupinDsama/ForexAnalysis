@@ -4,3 +4,19 @@ compatibility_date = "2026-09-28"
 
 [observability]
 enabled = true
+
+# Run in US-West so Gemini API sees a supported region.
+# (Default colo near VN is HKG, which Google rejects with
+# "User location is not supported for the API use".)
+[placement]
+mode = "smart"
+hints = ["wnam"]
+
+[ai]
+binding = "AI"
+
+# NOTE: migrations v1 (GeminiProxy) stays applied; the class is kept
+# as an unused stub so existing Durable Object instances stay valid.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GeminiProxy"]

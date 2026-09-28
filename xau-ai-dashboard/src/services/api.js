@@ -29,7 +29,13 @@ export async function askAI(prompt, marketData) {
   });
 
   if (!response.ok) {
-    throw new Error("AI request failed");
+    let detail = "";
+    try {
+      detail = JSON.stringify(await response.json());
+    } catch {
+      // ignore
+    }
+    throw new Error(`AI request failed (${response.status}) ${detail}`);
   }
 
   return response.json();
