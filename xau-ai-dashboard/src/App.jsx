@@ -3,12 +3,15 @@ import Chart from "./components/Chart";
 import Controls from "./components/Controls";
 import Analysis from "./components/Analysis";
 import Chat from "./components/Chat";
+import Memory from "./components/Memory";
 import {
   getXAUUSD,
   askAI,
   convertCandles,
   getQuotaInfo,
   incRequestCount,
+  getStorage,
+  saveMemory,
 } from "./services/api";
 import "./App.css";
 
@@ -22,6 +25,19 @@ function App() {
   const [history, setHistory] = useState([]);
   const [asking, setAsking] = useState(false);
   const [quota, setQuota] = useState(() => getQuotaInfo());
+  const [storage, setStorage] = useState(null);
+
+  async function refreshStorage() {
+    try {
+      setStorage(await getStorage());
+    } catch {
+      // storage panel stays empty when Worker is unreachable
+    }
+  }
+
+  useEffect(() => {
+    refreshStorage();
+  }, []);
 
   const loadMarketData = useCallback(async () => {
     const q = getQuotaInfo();
@@ -67,10 +83,20 @@ function App() {
         result?.candidates?.[0]?.content?.parts?.[0]?.text ||
         "AI returned no response.";
       setHistory((h) => [...h, { role: "ai", text }]);
+      if (result?.storage) setStorage(result.storage);
     } catch (e) {
       setHistory((h) => [...h, { role: "ai", text: `Error: ${e.message}` }]);
     } finally {
       setAsking(false);
+    }
+  }
+
+  async function handleSaveMemory(kind, text) {
+    const result = await saveMemory(kind, text);
+    if (result?.storage) {
+      setStorage(result.storage);
+    } else {
+      refreshStorage();
     }
   }
 
@@ -114,6 +140,7 @@ function App() {
             asking={asking}
             onSend={handleAskAI}
           />
+          <Memory storage={storage} onSave={handleSaveMemory} />
         </aside>
       </main>
     </div>

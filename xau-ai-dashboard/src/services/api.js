@@ -41,6 +41,26 @@ export async function askAI(prompt, marketData) {
   return response.json();
 }
 
+export async function getStorage() {
+  const response = await fetch(`${API_URL}/api/storage`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch storage info");
+  }
+  return response.json();
+}
+
+export async function saveMemory(kind, content) {
+  const response = await fetch(`${API_URL}/api/memory`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, content }),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to save memory");
+  }
+  return response.json();
+}
+
 export function convertCandles(values) {
   if (!Array.isArray(values)) return [];
   return [...values]

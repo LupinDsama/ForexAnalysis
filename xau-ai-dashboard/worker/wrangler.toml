@@ -15,6 +15,11 @@ hints = ["wnam"]
 [ai]
 binding = "AI"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "xau-memory"
+database_id = "28583f21-557b-4d0b-9d03-1b2589a0380d"
+
 # NOTE: migrations v1 (GeminiProxy) stays applied; the class is kept
 # as an unused stub so existing Durable Object instances stay valid.
 [[migrations]]
