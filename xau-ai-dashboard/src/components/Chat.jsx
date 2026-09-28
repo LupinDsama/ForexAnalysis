@@ -96,6 +96,7 @@ export default function Chat({
   setQuestion,
   history,
   asking,
+  phase,
   onSend,
 }) {
   const bottomRef = useRef(null);
@@ -125,7 +126,20 @@ export default function Chat({
             <AiMessage key={i} msg={m} />
           )
         )}
-        {asking && <div className="msg ai typing">AI đang phân tích…</div>}
+        {asking && (
+          <div className="msg ai waiting">
+            <div className="wait-text">
+              {phase === "fetch"
+                ? "Đang lấy dữ liệu mới từ Twelve Data…"
+                : "AI đang phân tích…"}
+            </div>
+            <div className="shimmer">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
       <div className="chat-box">

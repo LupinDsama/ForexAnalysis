@@ -15,11 +15,15 @@ import {
 } from "./services/api";
 import "./App.css";
 
+// On-demand: fetch on open / tab switch is cache-only, manual ⟳ and chat.
+// For chat, a timeframe is re-fetched only when older than its staleness
+// window — 1 request = 1 symbol + 1 interval on Twelve Data, so this
+// keeps analysis fresh where it moves while sparing the free quota.
 const TIMEFRAMES = [
-  { key: "1m", label: "1m", interval: "1min" },
-  { key: "5m", label: "5m", interval: "5min" },
-  { key: "1h", label: "1H", interval: "1h" },
-  { key: "4h", label: "4H", interval: "4h" },
+  { key: "1m", label: "1m", interval: "1min", staleMs: 90_000 },
+  { key: "5m", label: "5m", interval: "5min", staleMs: 360_000 },
+  { key: "1h", label: "1H", interval: "1h", staleMs: 1_200_000 },
+  { key: "4h", label: "4H", interval: "4h", staleMs: 2_400_000 },
 ];
 
 function formatTime(ts) {
@@ -37,9 +41,31 @@ function App() {
   const [question, setQuestion] = useState("");
   const [history, setHistory] = useState([]);
   const [asking, setAsking] = useState(false);
+  const [askPhase, setAskPhase] = useState(null);
   const [quota, setQuota] = useState(() => getQuotaInfo());
   const [storage, setStorage] = useState(null);
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem("xau_theme");
+      if (saved === "light" || saved === "dark") return saved;
+      if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
+        return "dark";
+      }
+    } catch {
+      // ignore
+    }
+    return "light";
+  });
   const chartRef = useRef(null);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("xau_theme", theme);
+    } catch {
+      // ignore
+    }
+  }, [theme]);
 
   async function refreshStorage() {
     try {
@@ -79,15 +105,13 @@ function App() {
     }
   }, []);
 
-  // Initial load: all timeframes once, on demand afterwards.
+  // Initial load: active timeframe only. Others load on ⟳ or chat.
   useEffect(() => {
-    TIMEFRAMES.forEach((tf) => loadTF(tf));
+    loadTF(TIMEFRAMES[0]);
   }, [loadTF]);
 
   function handleSwitchTF(key) {
     setActiveTF(key);
-    const tf = TIMEFRAMES.find((t) => t.key === key);
-    if (tf) loadTF(tf);
   }
 
   function buildMarketContext(dataObj) {
@@ -115,14 +139,24 @@ function App() {
     setHistory((h) => [...h, { role: "user", text: q }]);
     setAsking(true);
     try {
-      // Fresh data for every chat: all 4 timeframes on demand.
-      const fresh = await Promise.all(TIMEFRAMES.map((tf) => loadTF(tf)));
-      const merged = {};
-      TIMEFRAMES.forEach((tf, i) => {
-        merged[tf.key] =
-          fresh[i]?.length ? fresh[i] : data[tf.key] || [];
+      // Fresh data for chat, but only for stale timeframes.
+      setAskPhase("fetch");
+      const nowTs = Date.now();
+      const current = {};
+      TIMEFRAMES.forEach((tf) => {
+        current[tf.key] = data[tf.key] || [];
       });
-      const result = await askAI(q, buildMarketContext(merged));
+      await Promise.all(
+        TIMEFRAMES.map(async (tf) => {
+          const last = lastFetch[tf.key] || 0;
+          const hasData = (current[tf.key] || []).length > 0;
+          if (hasData && nowTs - last < tf.staleMs) return;
+          const fresh = await loadTF(tf);
+          if (fresh?.length) current[tf.key] = fresh;
+        })
+      );
+      setAskPhase("ai");
+      const result = await askAI(q, buildMarketContext(current));
       const text =
         result?.candidates?.[0]?.content?.parts?.[0]?.text ||
         "AI returned no response.";
@@ -138,6 +172,7 @@ function App() {
       setHistory((h) => [...h, { role: "ai", text: `Error: ${e.message}` }]);
     } finally {
       setAsking(false);
+      setAskPhase(null);
     }
   }
 
@@ -151,11 +186,21 @@ function App() {
   }
 
   const activeTFConf = TIMEFRAMES.find((t) => t.key === activeTF);
+  const activeData = data[activeTF] || [];
 
   return (
     <div className="app">
       <header>
-        <h1>XAUUSD AI Analyzer</h1>
+        <div className="header-row">
+          <h1>XAUUSD AI Analyzer</h1>
+          <button
+            className="theme-toggle"
+            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+            title="Chuyển chế độ sáng / tối"
+          >
+            {theme === "light" ? "🌙 Tối" : "☀️ Sáng"}
+          </button>
+        </div>
         <Controls
           chartVisible={chartVisible}
           quota={quota}
@@ -181,20 +226,31 @@ function App() {
             <button
               className="refresh-one"
               onClick={() => loadTF(activeTFConf)}
-              title="Fetch this timeframe now"
+              title="Tải lại khung này"
             >
               ⟳
             </button>
           </div>
 
           {chartVisible ? (
-            <Chart key={activeTF} ref={chartRef} data={data[activeTF]} />
+            activeData.length || updating[activeTF] ? (
+              <Chart
+                key={activeTF + theme}
+                ref={chartRef}
+                data={activeData}
+                theme={theme}
+              />
+            ) : (
+              <div className="chart-empty">
+                Chưa có dữ liệu khung {activeTFConf.label} — bấm ⟳ để tải
+              </div>
+            )
           ) : (
             <div className="chart-hidden">Chart hidden</div>
           )}
           <div className="status">
             {updating[activeTF]
-              ? "Fetching..."
+              ? "Đang tải..."
               : `Cập nhật lúc ${formatTime(lastFetch[activeTF])} (${activeTFConf.label}) · on-demand`}
           </div>
         </section>
@@ -211,6 +267,7 @@ function App() {
             setQuestion={setQuestion}
             history={history}
             asking={asking}
+            phase={askPhase}
             onSend={handleAskAI}
           />
           <Memory storage={storage} onSave={handleSaveMemory} />

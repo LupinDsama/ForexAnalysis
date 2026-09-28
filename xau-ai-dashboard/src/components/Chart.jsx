@@ -1,7 +1,24 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { createChart, CandlestickSeries } from "lightweight-charts";
 
-const Chart = forwardRef(function Chart({ data }, ref) {
+const THEMES = {
+  light: {
+    textColor: "#3a3a3c",
+    bg: "#ffffff",
+    grid: "#e5e5ea",
+    up: "#34c759",
+    down: "#ff3b30",
+  },
+  dark: {
+    textColor: "#d1d5db",
+    bg: "#0b0f19",
+    grid: "#1f2937",
+    up: "#22c55e",
+    down: "#ef4444",
+  },
+};
+
+const Chart = forwardRef(function Chart({ data, theme = "dark" }, ref) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
@@ -19,26 +36,27 @@ const Chart = forwardRef(function Chart({ data }, ref) {
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const c = THEMES[theme] || THEMES.dark;
 
     const chart = createChart(containerRef.current, {
       layout: {
-        textColor: "#d1d5db",
-        background: { type: "solid", color: "#0b0f19" },
+        textColor: c.textColor,
+        background: { type: "solid", color: c.bg },
       },
       grid: {
-        vertLines: { color: "#1f2937" },
-        horzLines: { color: "#1f2937" },
+        vertLines: { color: c.grid },
+        horzLines: { color: c.grid },
       },
       width: containerRef.current.clientWidth,
       height: 500,
     });
 
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
+      upColor: c.up,
+      downColor: c.down,
       borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      wickUpColor: c.up,
+      wickDownColor: c.down,
     });
 
     chartRef.current = chart;
@@ -54,7 +72,7 @@ const Chart = forwardRef(function Chart({ data }, ref) {
       resizeObserver.disconnect();
       chart.remove();
     };
-  }, []);
+  }, [theme]);
 
   useEffect(() => {
     if (!seriesRef.current || !data?.length) return;
