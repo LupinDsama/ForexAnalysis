@@ -17,17 +17,32 @@ function parseSetup(text) {
       return { setup, body: src.replace(m[0], "").trim() };
     }
   }
-  // Fallback: "**Xu hướng**: ..." style lines anywhere in the text.
+  // Fallback: "**Entry:** ...", "- Entry: ...", "1. TP: ..." etc.
   const found = {};
   const rest = [];
+  const KEYMAP = {
+    "xu hướng": "xu hướng",
+    entry: "entry",
+    "điểm vào": "entry",
+    "vào lệnh": "entry",
+    tp: "tp",
+    "chốt lời": "tp",
+    sl: "sl",
+    "cắt lỗ": "sl",
+    "lý do": "lý do",
+  };
   for (const line of src.split("\n")) {
     const mm =
-      /^\s*(?:[-*]\s*)?(?:\*\*)?\s*(xu hướng|entry|tp\d*|sl|lý do)(?:\*\*)?\s*[:-]\s*(.+?)\s*$/.exec(
+      /^\s*(?:[-*•]\s*)?(?:\d+[.)]\s*)?(?:\*\*)?\s*(xu hướng|entry|điểm vào|vào lệnh|tp\d*|chốt lời|sl|cắt lỗ|lý do)(?:\*\*)?\s*[:\-–—]\s*(.+?)\s*$/.exec(
         line
       );
     if (mm) {
-      const key = /^tp\d*$/.test(mm[1].toLowerCase()) ? "tp" : mm[1].toLowerCase();
-      found[key] = (found[key] ? found[key] + " / " : "") + mm[2].replace(/\*\*/g, "").trim();
+      const raw = mm[1].toLowerCase();
+      const key = /^tp\d*$/.test(raw) ? "tp" : KEYMAP[raw] || raw;
+      const val = mm[2].replace(/\*\*/g, "").trim();
+      if (val && val !== "—") {
+        found[key] = (found[key] ? found[key] + " / " : "") + val;
+      }
     } else {
       rest.push(line);
     }
@@ -38,18 +53,26 @@ function parseSetup(text) {
   return { setup: null, body: src };
 }
 
+function cleanTrend(trend) {
+  const t = (trend || "").trim();
+  if (!t || t === "—" || t.includes("|")) return "—";
+  return t;
+}
+
 function trendClass(trend) {
-  const t = (trend || "").toUpperCase();
+  const t = cleanTrend(trend).toUpperCase();
+  if (t === "—") return "side";
   if (t.includes("TĂNG") || t.includes("UP") || t.includes("LONG")) return "up";
   if (t.includes("GIẢM") || t.includes("DOWN") || t.includes("SHORT")) return "down";
   return "side";
 }
 
 function SetupCard({ setup }) {
+  const trend = cleanTrend(setup["xu hướng"]);
   return (
     <div className="setup-card">
-      <div className={`setup-trend ${trendClass(setup["xu hướng"])}`}>
-        {setup["xu hướng"] || "—"}
+      <div className={`setup-trend ${trendClass(trend)}`}>
+        {trend}
       </div>
       <div className="setup-rows">
         <div>

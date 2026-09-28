@@ -482,6 +482,18 @@ SL: <cắt lỗ>
 Lý do: <1 câu>
 \`\`\`
 
+Ví dụ câu trả lời đúng:
+- Giá đang **4136.44**, tăng **0.94%**.
+- Fed giữ lãi suất, DXY suy yếu hỗ trợ vàng.
+
+\`\`\`setup
+Xu hướng: TĂNG
+Entry: 4136.44
+TP: 4140.00 / 4148.00
+SL: 4130.00
+Lý do: NFP yếu làm USD giảm, nến 1H BOS lên
+\`\`\`
+
 Long-term memory to stay consistent with:`;
 
     const aiRes = await env.AI.run("@cf/meta/llama-3.1-8b-instruct-fp8", {

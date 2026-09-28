@@ -38,7 +38,8 @@ const Chart = forwardRef(function Chart({ data, theme = "dark" }, ref) {
     if (!containerRef.current) return;
     const c = THEMES[theme] || THEMES.dark;
 
-    const chart = createChart(containerRef.current, {
+    const el = containerRef.current;
+    const chart = createChart(el, {
       layout: {
         textColor: c.textColor,
         background: { type: "solid", color: c.bg },
@@ -47,8 +48,8 @@ const Chart = forwardRef(function Chart({ data, theme = "dark" }, ref) {
         vertLines: { color: c.grid },
         horzLines: { color: c.grid },
       },
-      width: containerRef.current.clientWidth,
-      height: 500,
+      width: el.clientWidth,
+      height: el.clientHeight || 500,
     });
 
     const series = chart.addSeries(CandlestickSeries, {
@@ -64,7 +65,10 @@ const Chart = forwardRef(function Chart({ data, theme = "dark" }, ref) {
 
     const resizeObserver = new ResizeObserver(() => {
       if (!containerRef.current) return;
-      chart.applyOptions({ width: containerRef.current.clientWidth });
+      chart.applyOptions({
+        width: containerRef.current.clientWidth,
+        height: containerRef.current.clientHeight || 500,
+      });
     });
     resizeObserver.observe(containerRef.current);
 
@@ -84,7 +88,8 @@ const Chart = forwardRef(function Chart({ data, theme = "dark" }, ref) {
   return (
     <div
       ref={containerRef}
-      style={{ width: "100%", height: "500px" }}
+      className="chart-mount"
+      style={{ width: "100%" }}
     />
   );
 });
