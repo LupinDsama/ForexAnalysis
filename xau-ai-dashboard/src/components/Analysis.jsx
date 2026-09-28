@@ -1,4 +1,9 @@
-export default function Analysis({ data, timeframes, loading, autoRefresh }) {
+function formatTime(ts) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleTimeString();
+}
+
+export default function Analysis({ data, timeframes, loading, lastFetch }) {
   function lastOf(key) {
     const arr = data?.[key] || [];
     return arr[arr.length - 1] || null;
@@ -21,15 +26,13 @@ export default function Analysis({ data, timeframes, loading, autoRefresh }) {
         return (
           <p key={tf.key}>
             {tf.label}: {last ? last.close.toFixed(2) : "—"} (
-            {changeOf(tf.key)})
+            {changeOf(tf.key)}) · {formatTime(lastFetch?.[tf.key])}
           </p>
         );
       })}
-      <p>
-        {loading ? "● Updating" : autoRefresh ? "Auto refresh ON" : "Auto refresh OFF"}
-      </p>
+      <p>{loading ? "● Updating" : "On-demand updates"}</p>
       <p className="muted">
-        Multi-timeframe 1m / 5m / 1H / 4H · AI sees all four on every question
+        Fetch lúc mở trang / chuyển khung / ⟳ / chat · AI luôn nhận dữ liệu tươi
       </p>
     </div>
   );

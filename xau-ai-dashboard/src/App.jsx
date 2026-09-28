@@ -15,35 +15,30 @@ import {
 } from "./services/api";
 import "./App.css";
 
-// Refresh cadence per timeframe. Higher TFs barely move intraday,
-// so they poll rarely to protect the Twelve Data free quota (800/day).
 const TIMEFRAMES = [
-  { key: "1m", label: "1m", interval: "1min", refreshMs: 60_000 },
-  { key: "5m", label: "5m", interval: "5min", refreshMs: 300_000 },
-  { key: "1h", label: "1H", interval: "1h", refreshMs: 900_000 },
-  { key: "4h", label: "4H", interval: "4h", refreshMs: 1_800_000 },
+  { key: "1m", label: "1m", interval: "1min" },
+  { key: "5m", label: "5m", interval: "5min" },
+  { key: "1h", label: "1H", interval: "1h" },
+  { key: "4h", label: "4H", interval: "4h" },
 ];
 
-function formatCountdown(ms) {
-  const s = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(s / 60);
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
+function formatTime(ts) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleTimeString();
 }
 
 function App() {
   const [chartVisible, setChartVisible] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [activeTF, setActiveTF] = useState("1m");
   const [data, setData] = useState({ "1m": [], "5m": [], "1h": [], "4h": [] });
   const [updating, setUpdating] = useState({});
+  const [lastFetch, setLastFetch] = useState({});
   const [error, setError] = useState("");
   const [question, setQuestion] = useState("");
   const [history, setHistory] = useState([]);
   const [asking, setAsking] = useState(false);
   const [quota, setQuota] = useState(() => getQuotaInfo());
   const [storage, setStorage] = useState(null);
-  const [now, setNow] = useState(() => Date.now());
-  const [nextAt, setNextAt] = useState({});
 
   async function refreshStorage() {
     try {
@@ -57,71 +52,54 @@ function App() {
     refreshStorage();
   }, []);
 
-  // Realtime 1s ticker for refresh countdowns.
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  // Seed countdown targets so tabs show a timer immediately.
-  useEffect(() => {
-    setNextAt(
-      Object.fromEntries(
-        TIMEFRAMES.map((tf) => [tf.key, Date.now() + tf.refreshMs])
-      )
-    );
-  }, []);
-
+  // Returns fresh candles, or null on failure/quota stop.
   const loadTF = useCallback(async (tf) => {
     const q = getQuotaInfo();
     if (q.shouldStop) {
       setQuota(q);
-      setAutoRefresh(false);
-      setError("Twelve Data daily quota nearly reached — auto refresh stopped.");
-      return;
+      setError("Twelve Data daily quota reached — requests paused.");
+      return null;
     }
     setUpdating((u) => ({ ...u, [tf.key]: true }));
     try {
       const res = await getXAUUSD(tf.interval);
       incRequestCount();
       setQuota(getQuotaInfo());
-      setData((d) => ({ ...d, [tf.key]: convertCandles(res.values) }));
+      const candles = convertCandles(res.values);
+      setData((d) => ({ ...d, [tf.key]: candles }));
+      setLastFetch((t) => ({ ...t, [tf.key]: Date.now() }));
       setError("");
+      return candles;
     } catch (e) {
       setError(`${tf.label}: ${e.message}`);
+      return null;
     } finally {
       setUpdating((u) => ({ ...u, [tf.key]: false }));
-      setNextAt((n) => ({ ...n, [tf.key]: Date.now() + tf.refreshMs }));
     }
   }, []);
 
-  // Initial load: all timeframes once.
+  // Initial load: all timeframes once, on demand afterwards.
   useEffect(() => {
     TIMEFRAMES.forEach((tf) => loadTF(tf));
   }, [loadTF]);
 
-  // Per-timeframe auto refresh.
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const timers = TIMEFRAMES.map((tf) =>
-      setInterval(() => loadTF(tf), tf.refreshMs)
-    );
-    return () => timers.forEach(clearInterval);
-  }, [autoRefresh, loadTF]);
+  function handleSwitchTF(key) {
+    setActiveTF(key);
+    const tf = TIMEFRAMES.find((t) => t.key === key);
+    if (tf) loadTF(tf);
+  }
 
-  function buildMarketContext() {
+  function buildMarketContext(dataObj) {
     const timeframes = {};
     for (const tf of TIMEFRAMES) {
-      const arr = data[tf.key] || [];
+      const arr = dataObj[tf.key] || [];
       const last = arr[arr.length - 1];
       const prev = arr[arr.length - 2];
       timeframes[tf.key] = {
         count: arr.length,
         last: last?.close ?? null,
-        change:
-          last && prev ? +(last.close - prev.close).toFixed(2) : null,
-        candles:
-          tf.key === activeTF ? arr.slice(-30) : arr.slice(-10),
+        change: last && prev ? +(last.close - prev.close).toFixed(2) : null,
+        candles: tf.key === activeTF ? arr.slice(-30) : arr.slice(-10),
       };
     }
     return { active: activeTF, timeframes };
@@ -134,7 +112,14 @@ function App() {
     setHistory((h) => [...h, { role: "user", text: q }]);
     setAsking(true);
     try {
-      const result = await askAI(q, buildMarketContext());
+      // Fresh data for every chat: all 4 timeframes on demand.
+      const fresh = await Promise.all(TIMEFRAMES.map((tf) => loadTF(tf)));
+      const merged = {};
+      TIMEFRAMES.forEach((tf, i) => {
+        merged[tf.key] =
+          fresh[i]?.length ? fresh[i] : data[tf.key] || [];
+      });
+      const result = await askAI(q, buildMarketContext(merged));
       const text =
         result?.candidates?.[0]?.content?.parts?.[0]?.text ||
         "AI returned no response.";
@@ -164,10 +149,8 @@ function App() {
         <h1>XAUUSD AI Analyzer</h1>
         <Controls
           chartVisible={chartVisible}
-          autoRefresh={autoRefresh}
           quota={quota}
           onToggleChart={() => setChartVisible((v) => !v)}
-          onToggleRefresh={() => setAutoRefresh((v) => !v)}
         />
       </header>
 
@@ -180,21 +163,16 @@ function App() {
               <button
                 key={tf.key}
                 className={tf.key === activeTF ? "active" : ""}
-                onClick={() => setActiveTF(tf.key)}
-                title={`Auto refresh every ${tf.refreshMs / 60000} min`}
+                onClick={() => handleSwitchTF(tf.key)}
               >
                 {tf.label}
-                {updating[tf.key]
-                  ? " ●"
-                  : autoRefresh && nextAt[tf.key]
-                    ? ` ${formatCountdown(nextAt[tf.key] - now)}`
-                    : ""}
+                {updating[tf.key] ? " ●" : ""}
               </button>
             ))}
             <button
               className="refresh-one"
               onClick={() => loadTF(activeTFConf)}
-              title="Refresh this timeframe now"
+              title="Fetch this timeframe now"
             >
               ⟳
             </button>
@@ -207,10 +185,8 @@ function App() {
           )}
           <div className="status">
             {updating[activeTF]
-              ? "Updating..."
-              : autoRefresh
-                ? `Auto refresh ON (${activeTFConf.label})`
-                : "Auto refresh OFF"}
+              ? "Fetching..."
+              : `Cập nhật lúc ${formatTime(lastFetch[activeTF])} (${activeTFConf.label}) · on-demand`}
           </div>
         </section>
 
@@ -219,7 +195,7 @@ function App() {
             data={data}
             timeframes={TIMEFRAMES}
             loading={Object.values(updating).some(Boolean)}
-            autoRefresh={autoRefresh}
+            lastFetch={lastFetch}
           />
           <Chat
             question={question}
