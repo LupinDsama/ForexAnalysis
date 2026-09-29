@@ -118,7 +118,20 @@ POST /api/chat { prompt, marketData, boost }
   │     chat xã giao → không lưu gì
   ▼
 Frontend: markdown + thẻ Setup (Xu hướng/Kiểu/Entry/TP/SL/Lệnh chờ/Scalp/Swing)
++ ảnh chart + storage mới. Worker tự sửa nhãn trend nếu số mâu thuẫn
+(TP dưới entry không thể là LONG).
 ```
+
+### 4.5. Giá live (không tốn Twelve)
+
+```text
+Browser ──poll 30s──► GET /api/live ──► Yahoo GC=F (COMEX futures, cache 30s
+ở Worker) ──► gộp tick thành nến đang hình thành từng khung ──► series.update()
+```
+- Twelve chỉ còn: sử ban đầu, ⟳ tay, chat phân tích.
+- TV WebSocket nối thẳng đã test: local qua, github.io bị từ chối origin.
+  Yahoo thiếu CORS nên phải proxy qua Worker. Giá futures lệch spot vài đô:
+  chart tham khảo OK, phân tích vẫn dùng nến Twelve.
 
 - Response Worker giữ shape kiểu Gemini (`candidates[0].content.parts[0].text`)
   để frontend không phải đổi.
