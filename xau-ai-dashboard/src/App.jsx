@@ -5,6 +5,7 @@ import Analysis from "./components/Analysis";
 import Chat from "./components/Chat";
 import Memory from "./components/Memory";
 import News from "./components/News";
+import Orders from "./components/Orders";
 import {
   getXAUUSD,
   askAI,
@@ -335,6 +336,7 @@ function App() {
         </section>
 
         <aside className="ai-panel">
+          <Orders storage={storage} onRefresh={refreshStorage} />
           <Analysis
             data={data}
             timeframes={TIMEFRAMES}

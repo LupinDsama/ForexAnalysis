@@ -179,6 +179,12 @@ async function storageInfo(db) {
     .prepare(`SELECT pattern, score, won, lost FROM scores ORDER BY score DESC`)
     .all();
   const used = Number(usage?.value || 0);
+  const openSetups = await db
+    .prepare(
+      `SELECT id, trend, style, entry, tp, sl, created_at FROM setups
+       WHERE status = 'OPEN' ORDER BY id DESC LIMIT 20`
+    )
+    .all();
   return {
     used_bytes: used,
     limit_bytes: D1_FREE_LIMIT_BYTES,
@@ -188,6 +194,7 @@ async function storageInfo(db) {
       setups,
     },
     scores: sc.results || [],
+    open_setups: openSetups.results || [],
     recent: recent.results || [],
   };
 }
@@ -254,6 +261,18 @@ async function loadContext(db) {
   let block = "";
   if (know?.content) {
     block += know.content + "\n";
+  }
+  const kb = await db
+    .prepare(
+      `SELECT substr(content, 1, 400) AS c FROM memories
+       WHERE kind = 'kb' ORDER BY id ASC`
+    )
+    .all();
+  if (kb.results?.length) {
+    block +=
+      "[KIẾN THỨC NỀN XAUUSD — dùng để giải thích, đừng trích nguyên văn]\n" +
+      kb.results.map((r) => `- ${r.c}`).join("\n").slice(0, 6000) +
+      "\n";
   }
   if (mems.length) {
     block +=
@@ -425,6 +444,89 @@ function parseNum(s) {
   if (s == null) return null;
   const m = String(s).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
   return m ? Number(m[0]) : null;
+}
+
+// Convert any chart the model can't read (raw candles) into a compact
+// technical digest: RSI-14, range position, ATR, streak, swing extremes.
+function rsi14(closes) {
+  if (closes.length < 15) return null;
+  let gains = 0;
+  let losses = 0;
+  for (let i = closes.length - 14; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gains += d;
+    else losses -= d;
+  }
+  if (losses === 0) return 100;
+  const rs = gains / 14 / (losses / 14);
+  return Math.round((100 - 100 / (1 + rs)) * 10) / 10;
+}
+
+function summarizeTF(candles) {
+  const valid = (Array.isArray(candles) ? candles : []).filter(
+    (c) =>
+      c &&
+      [c.open, c.high, c.low, c.close].every((v) => Number.isFinite(Number(v)))
+  );
+  if (!valid.length) return null;
+  const closes = valid.map((c) => Number(c.close));
+  const highs = valid.map((c) => Number(c.high));
+  const lows = valid.map((c) => Number(c.low));
+  const last = closes[closes.length - 1];
+  const hi = Math.max(...highs);
+  const lo = Math.min(...lows);
+  let atr = null;
+  const trs = [];
+  for (let i = Math.max(1, valid.length - 14); i < valid.length; i++) {
+    const c = valid[i];
+    const p = valid[i - 1];
+    trs.push(
+      Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close))
+    );
+  }
+  if (trs.length) atr = Math.round((trs.reduce((a, b) => a + b, 0) / trs.length) * 100) / 100;
+  let streak = 0;
+  for (let i = closes.length - 1; i > 0; i--) {
+    const d = closes[i] - closes[i - 1];
+    if (streak >= 0 && d >= 0) streak++;
+    else if (streak <= 0 && d < 0) streak--;
+    else break;
+  }
+  return {
+    last,
+    count: valid.length,
+    rsi14: rsi14(closes),
+    rangePos:
+      hi === lo ? 50 : Math.round(((last - lo) / (hi - lo)) * 100),
+    atr,
+    streak,
+    swingHigh: hi,
+    swingLow: lo,
+  };
+}
+
+function techDigest(marketData) {
+  const out = [];
+  const tfs = marketData?.timeframes || null;
+  const push = (name, candles) => {
+    const s = summarizeTF(candles);
+    if (!s) return;
+    out.push(
+      `${name}: last ${s.last}, RSI14 ${s.rsi14 ?? "-"}, ` +
+        `vị trí trong biên ${s.count} nến: ${s.rangePos}%, ` +
+        `ATR ${s.atr ?? "-"}, chuỗi ${s.streak > 0 ? "+" + s.streak : s.streak}, ` +
+        `swing H/L ${s.swingHigh}/${s.swingLow}`
+    );
+  };
+  if (tfs) {
+    for (const k of ["1m", "5m", "15m", "1h", "4h", "1D"]) {
+      if (tfs[k]?.candles) push(k, tfs[k].candles);
+    }
+  } else if (Array.isArray(marketData)) {
+    push("data", marketData);
+  }
+  if (!out.length) return "";
+  return "[TECHNICAL DIGEST — chỉ báo đã tính sẵn, đừng tính lại]\n" + out.join("\n");
 }
 
 function setupKV(text) {
@@ -927,6 +1029,7 @@ async function chatWithAI(request, env) {
     let track = "";
     let storage = null;
     const md = describeMarket(marketData);
+    const tech = techDigest(marketData);
     let macro = "";
     if (env.DB) {
       await ensureSchema(env.DB);
@@ -1013,6 +1116,7 @@ Track record and lessons to stay consistent with:`;
           role: "user",
           content:
             (macro ? macro + "\n" : "") +
+            (tech ? tech + "\n" : "") +
             (track ? track + "\n" : "") +
             (memoryBlock ? memoryBlock + "\n" : "") +
             "User question:\n" +

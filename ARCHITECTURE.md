@@ -138,7 +138,7 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 
 | Bảng | Nội dung |
 |---|---|
-| `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
+| `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `kb` (15 kiến thức nền XAUUSD nạp sẵn, luôn nạp vào prompt), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
 | `setups` | setup số học được từ mỗi câu trả lời (trend/style/entry/tp/sl + `created_ts` ghi thời điểm AI trả lời, status OPEN→WON/LOST) — chấm tự động bằng nến mới |
 | `scores` | điểm từng pattern (`SCALPING LONG`...): scalp thắng +1, swing thắng +3, thua -1, kèm won/lost — pattern điểm dương thành cơ sở trong digest, nạp vào prompt |
 | `snapshots` | nến gọn `[[t,o,h,l,c],...]` mỗi lần chat |
