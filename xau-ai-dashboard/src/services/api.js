@@ -23,11 +23,11 @@ export async function getXAUUSD(interval = "1min") {
   return response.json();
 }
 
-export async function askAI(prompt, marketData) {
+export async function askAI(prompt, marketData, boost = false) {
   const response = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, marketData }),
+    body: JSON.stringify({ prompt, marketData, boost }),
   });
 
   if (!response.ok) {

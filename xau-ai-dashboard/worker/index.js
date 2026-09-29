@@ -114,6 +114,21 @@ async function ensureSchema(db) {
       )`
     ),
     db.prepare(
+      `CREATE TABLE IF NOT EXISTS setups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        created_ts INTEGER NOT NULL,
+        trend TEXT NOT NULL,
+        style TEXT NOT NULL,
+        entry REAL NOT NULL,
+        tp REAL NOT NULL,
+        sl REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'OPEN',
+        judged_at TEXT,
+        note TEXT
+      )`
+    ),
+    db.prepare(
       `INSERT OR IGNORE INTO meta(key, value) VALUES('usage_bytes', '0')`
     ),
   ]);
@@ -142,11 +157,20 @@ async function storageInfo(db) {
        FROM memories ORDER BY id DESC LIMIT 10`
     )
     .all();
+  const st = await db
+    .prepare(`SELECT status, COUNT(*) AS c FROM setups GROUP BY status`)
+    .all();
+  const setups = { OPEN: 0, WON: 0, LOST: 0 };
+  for (const r of st.results || []) setups[r.status] = r.c;
   const used = Number(usage?.value || 0);
   return {
     used_bytes: used,
     limit_bytes: D1_FREE_LIMIT_BYTES,
-    tables: { memories: mem?.c || 0, snapshots: snap?.c || 0 },
+    tables: {
+      memories: mem?.c || 0,
+      snapshots: snap?.c || 0,
+      setups,
+    },
     recent: recent.results || [],
   };
 }
@@ -360,6 +384,181 @@ function macroBlock(macro) {
   return s.slice(0, 3200);
 }
 
+// ---------- setup backtest ----------
+
+function parseNum(s) {
+  if (s == null) return null;
+  const m = String(s).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+  return m ? Number(m[0]) : null;
+}
+
+function setupKV(text) {
+  const m = /```setup([\s\S]*?)```/.exec(text || "");
+  const src = m ? m[1] : text || "";
+  const out = {};
+  for (const line of src.split("\n")) {
+    const mm =
+      /^\s*(?:[-*•]\s*)?(?:\d+[.)]\s*)?(?:\*\*)?\s*([^:：\-–—*]{1,20}?)(?:\*\*)?\s*[:：\-–—]\s*(.+?)\s*$/.exec(
+        line
+      );
+    if (mm) out[mm[1].trim().toLowerCase()] = mm[2].replace(/\*\*/g, "").trim();
+  }
+  return out;
+}
+
+function extractSetup(text) {
+  const kv = setupKV(text);
+  const get = (...names) => {
+    for (const n of names) if (kv[n]) return kv[n];
+    return "";
+  };
+  const entry = parseNum(get("entry", "điểm vào", "vào lệnh"));
+  const tp = parseNum(get("tp", "chốt lời"));
+  const sl = parseNum(get("sl", "cắt lỗ"));
+  if (entry == null || tp == null || sl == null) return null;
+  const t = get("xu hướng").toUpperCase();
+  const trend = /GIẢM|DOWN|SHORT|SELL/.test(t)
+    ? "SHORT"
+    : /TĂNG|UP|LONG|BUY/.test(t)
+      ? "LONG"
+      : "SIDEWAYS";
+  const style = /SWING/.test(get("kiểu").toUpperCase()) ? "SWING" : "SCALPING";
+  return {
+    trend,
+    style,
+    entry,
+    tp,
+    sl,
+    pending: get("lệnh chờ", "lệnh"),
+    scalp: get("scalp"),
+    swing: get("swing"),
+    reason: get("lý do"),
+  };
+}
+
+function judgeCandles(marketData) {
+  // Finest series available for verdicts: 1m, else 5m, else 15m.
+  const pick = (arr) =>
+    Array.isArray(arr)
+      ? arr.filter(
+          (c) =>
+            c &&
+            Number.isFinite(c.time) &&
+            Number.isFinite(c.high) &&
+            Number.isFinite(c.low)
+        )
+      : [];
+  if (Array.isArray(marketData)) return pick(marketData);
+  const tfs = marketData?.timeframes || {};
+  for (const k of ["1m", "5m", "15m", "1h", "4h"]) {
+    const arr = pick(tfs[k]?.candles);
+    if (arr.length) return arr;
+  }
+  return [];
+}
+
+async function judgeSetups(db, candles) {
+  if (!candles.length) return [];
+  const nowSec = Math.floor(Date.now() / 1000);
+  const rows = await db
+    .prepare(
+      `SELECT * FROM setups WHERE status = 'OPEN' AND created_ts > ? ORDER BY id ASC`
+    )
+    .bind(nowSec - 7 * 86400)
+    .all();
+  const verdicts = [];
+  for (const s of rows.results || []) {
+    if (!(s.entry > 0) || !(s.tp > 0) || !(s.sl > 0)) continue;
+    let verdict = null;
+    let hitPrice = null;
+    let hitTime = null;
+    for (const c of candles) {
+      if (!(c.time > s.created_ts)) continue;
+      if (s.trend === "LONG") {
+        if (c.low <= s.sl) {
+          verdict = "LOST";
+          hitPrice = c.low;
+          hitTime = c.time;
+          break;
+        }
+        if (c.high >= s.tp) {
+          verdict = "WON";
+          hitPrice = c.high;
+          hitTime = c.time;
+          break;
+        }
+      } else if (s.trend === "SHORT") {
+        if (c.high >= s.sl) {
+          verdict = "LOST";
+          hitPrice = c.high;
+          hitTime = c.time;
+          break;
+        }
+        if (c.low <= s.tp) {
+          verdict = "WON";
+          hitPrice = c.low;
+          hitTime = c.time;
+          break;
+        }
+      } else break;
+    }
+    if (!verdict) continue;
+    const note =
+      `${verdict === "WON" ? "THẮNG" : "THUA"} — giá chạm ${hitPrice} lúc ` +
+      new Date(hitTime * 1000).toISOString();
+    await db
+      .prepare(`UPDATE setups SET status = ?, judged_at = datetime('now'), note = ? WHERE id = ?`)
+      .bind(verdict, note, s.id)
+      .run();
+    const lesson =
+      `Bài học #${s.id} (${s.style} ${s.trend} entry ${s.entry} TP ${s.tp} SL ${s.sl}): ${note}.`.slice(
+        0,
+        600
+      );
+    await db
+      .prepare(`INSERT INTO memories(kind, content) VALUES('lesson', ?)`)
+      .bind(lesson)
+      .run();
+    await addUsage(db, byteLen(lesson));
+    verdicts.push({ id: s.id, verdict });
+  }
+  await db
+    .prepare(
+      `DELETE FROM setups WHERE status != 'OPEN' AND judged_at < datetime('now', '-90 days')`
+    )
+    .run();
+  return verdicts;
+}
+
+async function trackRecord(db) {
+  const rows = await db
+    .prepare(`SELECT status, COUNT(*) AS c FROM setups GROUP BY status`)
+    .all();
+  const c = { OPEN: 0, WON: 0, LOST: 0 };
+  for (const r of rows.results || []) c[r.status] = r.c;
+  let s =
+    `[TRACK RECORD] setups đã chấm: ${c.WON + c.LOST} ` +
+    `(${c.WON} thắng / ${c.LOST} thua), đang mở: ${c.OPEN}.`;
+  const recent = await db
+    .prepare(
+      `SELECT trend, style, entry, tp, sl, status, note FROM setups
+       WHERE status != 'OPEN' ORDER BY id DESC LIMIT 5`
+    )
+    .all();
+  if (recent.results?.length) {
+    s +=
+      "\nGần nhất:\n" +
+      recent.results
+        .map(
+          (r) =>
+            `- ${r.style} ${r.trend} E${r.entry} TP${r.tp} SL${r.sl} → ${r.status} (${r.note || ""})`
+        )
+        .join("\n")
+        .slice(0, 800);
+  }
+  return s.slice(0, 1200);
+}
+
 async function pruneMemories(db) {
   const row = await db
     .prepare(`SELECT COUNT(*) AS c, MAX(id) AS m FROM memories`)
@@ -374,7 +573,7 @@ async function pruneMemories(db) {
 
 // ---------- routes ----------
 
-const ALLOWED_INTERVALS = ["1min", "5min", "1h", "4h"];
+const ALLOWED_INTERVALS = ["1min", "5min", "15min", "1h", "4h"];
 
 async function getXAUUSD(env, interval) {
   if (!env.TWELVE_DATA_API_KEY) {
@@ -437,21 +636,32 @@ async function chatWithAI(request, env) {
     const body = await request.json();
     const prompt = String(body.prompt || "");
     const marketData = body.marketData || null;
+    const boost = body.boost === true;
 
     let memoryBlock = "";
+    let track = "";
     let storage = null;
     const md = describeMarket(marketData);
     let macro = "";
     if (env.DB) {
+      await ensureSchema(env.DB);
       try {
         macro = macroBlock(await getMacroNews(env.DB));
       } catch {
         macro = "";
       }
-    }
-    if (env.DB) {
-      await ensureSchema(env.DB);
+      // Backtest: judge open setups against the finest fresh candles.
+      try {
+        await judgeSetups(env.DB, judgeCandles(marketData));
+      } catch {
+        // judging never blocks the chat
+      }
       memoryBlock = await loadContext(env.DB);
+      try {
+        track = await trackRecord(env.DB);
+      } catch {
+        track = "";
+      }
 
       if (md.snapshot) {
         await env.DB.prepare(
@@ -463,50 +673,60 @@ async function chatWithAI(request, env) {
       }
     }
 
-    const systemInstruction = `You are a Vietnamese trading assistant for an XAU/USD dashboard. Always reply in Vietnamese using Markdown (bullets with "- ", **bold** for prices).
+    const systemInstruction = `You are a Vietnamese trading chatbot for an XAU/USD dashboard. Chat naturally like a knowledgeable friend: concise, direct, a little personality, but every call stays grounded in data. Always reply in Vietnamese with Markdown (bullets "- ", **bold** prices).
 
-Think like an analyst, not a template: start from what the candles actually show, weigh it against the macro news and long-term memory, reason step by step in your own words, and only then conclude. Vary your phrasing between answers. It is fine to say a setup is unclear and advise standing aside.
+Think like an analyst: candles first, then macro news + memory + track record of your own past setups, reason step by step, then conclude. Vary phrasing. OK to stand aside when unclear. Learn from your WON/LOST history — avoid repeating losing patterns.
 
-Rules: never invent market data; separate observed data from interpretation; express views in probabilities, never certainty.
+Rules: never invent market data; separate observation from interpretation; probabilities, never certainty.
 
-Explain every call with theory first, in this order:
-1. Kinh tế: Fed/lãi suất kỳ vọng, USD/DXY, lạm phát (CPI/PCE), việc làm (NFP), dùng đúng số liệu lịch tin được cung cấp.
-2. Chính trị/địa chính trị & tâm lý rủi ro (risk-on/off, vàng trú ẩn, NHTW mua vàng).
-3. Kỹ thuật: nêu rõ phương pháp dùng (cấu trúc BOS/CHoCH, liquidity, hỗ trợ/kháng cự...).
+Explain each call with theory, in order:
+1. Kinh tế: Fed/lãi suất, USD/DXY, lạm phát (CPI/PCE), việc làm (NFP) — dùng đúng số lịch tin.
+2. Chính trị/địa chính trị & tâm lý rủi ro (risk-on/off, trú ẩn, NHTW mua vàng).
+3. Kỹ thuật: nêu phương pháp (BOS/CHoCH, liquidity, S/R...).
 
-You MUST end every answer with this exact block. Pick exactly ONE trend value. Fill all 5 lines, never leave any blank (use "—" only if truly unknown):
+Always give BOTH a scalping entry and a swing entry (hold >1h) when data supports them. Suggest pending orders (BUY LIMIT / SELL STOP) with 3–10+ price levels across scenarios.
+
+You MUST end every answer with this exact block. ONE trend value. Fill every line (use "—" only if truly unknown):
 
 \`\`\`setup
 Xu hướng: TĂNG | GIẢM | SIDEWAYS
-Entry: <vùng giá>
+Kiểu: SCALPING | SWING
+Entry: <giá>
 TP: <mục tiêu>
 SL: <cắt lỗ>
+Lệnh chờ: <BUY LIMIT / SELL STOP các mức, hoặc —>
+Scalp: <entry scalping hoặc —>
+Swing: <entry swing giữ >1h hoặc —>
 Lý do: <1 câu>
 \`\`\`
 
 Ví dụ câu trả lời đúng:
-- Giá đang **4136.44**, tăng **0.94%**.
-- Fed giữ lãi suất, DXY suy yếu hỗ trợ vàng.
+- Giá **4136.44**, DXY suy yếu sau NFP.
 
 \`\`\`setup
 Xu hướng: TĂNG
+Kiểu: SCALPING
 Entry: 4136.44
 TP: 4140.00 / 4148.00
 SL: 4130.00
+Lệnh chờ: BUY LIMIT 4132 / 4128 / 4124
+Scalp: 4136.44
+Swing: — (chờ BOS 4H)
 Lý do: NFP yếu làm USD giảm, nến 1H BOS lên
 \`\`\`
 
-Long-term memory to stay consistent with:`;
+Track record and lessons to stay consistent with:`;
 
     const aiRes = await env.AI.run("@cf/qwen/qwen3-30b-a3b-fp8", {
       temperature: 0.7,
-      max_tokens: 1500,
+      max_tokens: boost ? 2500 : 1500,
       messages: [
         { role: "system", content: systemInstruction },
         {
           role: "user",
           content:
             (macro ? macro + "\n" : "") +
+            (track ? track + "\n" : "") +
             (memoryBlock ? memoryBlock + "\n" : "") +
             "User question:\n" +
             prompt +
@@ -521,14 +741,52 @@ Long-term memory to stay consistent with:`;
     text = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
     if (env.DB) {
-      const entry =
-        `Q: ${prompt}\nA: ${text}`.slice(0, 3000);
-      await env.DB.prepare(
-        `INSERT INTO memories(kind, content) VALUES('analysis', ?)`
-      )
-        .bind(entry)
-        .run();
-      await addUsage(env.DB, byteLen(entry));
+      // Selective saving: only what helps future analysis.
+      const tagged = /\[phân tích\]/i.test(prompt);
+      const setup = extractSetup(text);
+      if (setup) {
+        await env.DB.prepare(
+          `INSERT INTO setups(created_ts, trend, style, entry, tp, sl, status)
+           VALUES(?, ?, ?, ?, ?, ?, 'OPEN')`
+        )
+          .bind(
+            Math.floor(Date.now() / 1000),
+            setup.trend,
+            setup.style,
+            setup.entry,
+            setup.tp,
+            setup.sl
+          )
+          .run();
+        await addUsage(
+          env.DB,
+          byteLen(JSON.stringify(setup))
+        );
+      }
+      if (tagged) {
+        // Explicit learning material: save the full exchange as a lesson.
+        const lesson =
+          `[phân tích] Q: ${prompt}\nA: ${text}`.slice(0, 3000);
+        await env.DB.prepare(
+          `INSERT INTO memories(kind, content) VALUES('lesson', ?)`
+        )
+          .bind(lesson)
+          .run();
+        await addUsage(env.DB, byteLen(lesson));
+      } else if (setup) {
+        // Compact setup summary only — chit-chat is not saved.
+        const body = text.replace(/```setup[\s\S]*?```/, "").trim();
+        const entry =
+          `Setup ${setup.style} ${setup.trend} E${setup.entry} ` +
+          `TP${setup.tp} SL${setup.sl} | ${setup.reason || ""} | ` +
+          body.slice(0, 300);
+        await env.DB.prepare(
+          `INSERT INTO memories(kind, content) VALUES('analysis', ?)`
+        )
+          .bind(entry.slice(0, 3000))
+          .run();
+        await addUsage(env.DB, byteLen(entry));
+      }
       await pruneMemories(env.DB);
       storage = await storageInfo(env.DB);
     }

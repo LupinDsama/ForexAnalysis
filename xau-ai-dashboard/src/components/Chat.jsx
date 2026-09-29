@@ -30,10 +30,15 @@ function parseSetup(text) {
     sl: "sl",
     "cắt lỗ": "sl",
     "lý do": "lý do",
+    "kiểu": "kiểu",
+    scalp: "scalp",
+    swing: "swing",
+    "lệnh chờ": "lệnh chờ",
+    "lệnh": "lệnh chờ",
   };
   for (const line of src.split("\n")) {
     const mm =
-      /^\s*(?:[-*•]\s*)?(?:\d+[.)]\s*)?(?:\*\*)?\s*(xu hướng|entry|điểm vào|vào lệnh|tp\d*|chốt lời|sl|cắt lỗ|lý do)(?:\*\*)?\s*[:\-–—]\s*(.+?)\s*$/.exec(
+      /^\s*(?:[-*•]\s*)?(?:\d+[.)]\s*)?(?:\*\*)?\s*(xu hướng|entry|điểm vào|vào lệnh|tp\d*|chốt lời|sl|cắt lỗ|lý do|kiểu|scalp|swing|lệnh chờ|lệnh)(?:\*\*)?\s*[:\-–—]\s*(.+?)\s*$/.exec(
         line
       );
     if (mm) {
@@ -69,6 +74,12 @@ function trendClass(trend) {
 
 function SetupCard({ setup }) {
   const trend = cleanTrend(setup["xu hướng"]);
+  const extra = [
+    ["Kiểu", setup["kiểu"]],
+    ["Lệnh chờ", setup["lệnh chờ"]],
+    ["Scalp", setup["scalp"]],
+    ["Swing", setup["swing"]],
+  ].filter(([, v]) => v);
   return (
     <div className="setup-card">
       <div className={`setup-trend ${trendClass(trend)}`}>
@@ -87,6 +98,12 @@ function SetupCard({ setup }) {
           <span>SL</span>
           <strong className="sl">{setup["sl"] || "—"}</strong>
         </div>
+        {extra.map(([label, value]) => (
+          <div key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
       </div>
       {setup["lý do"] && <p className="setup-reason">{setup["lý do"]}</p>}
     </div>
@@ -120,6 +137,8 @@ export default function Chat({
   history,
   asking,
   phase,
+  boost,
+  onToggleBoost,
   onSend,
 }) {
   const bottomRef = useRef(null);
@@ -137,7 +156,16 @@ export default function Chat({
 
   return (
     <div className="chat">
-      <h2>AI Chat</h2>
+      <div className="chat-head">
+        <h2>AI Chat</h2>
+        <button
+          className={boost ? "boost on" : "boost"}
+          onClick={onToggleBoost}
+          title="Super Boost: lấy tươi cả 5 khung, phân tích sâu (tốn ~5 requests)"
+        >
+          ⚡ Super Boost
+        </button>
+      </div>
       <div className="history">
         {history.length === 0 && <p className="muted">Hỏi AI về dữ liệu XAU/USD hiện tại...</p>}
         {history.map((m, i) =>
@@ -170,7 +198,7 @@ export default function Chat({
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={handleKey}
-          placeholder="Hỏi AI... (Enter để gửi, Shift+Enter xuống dòng)"
+          placeholder="Hỏi AI... (gõ [phân tích] để lưu thành bài học)"
         />
         <button onClick={onSend} disabled={asking}>
           {asking ? "..." : "Send"}

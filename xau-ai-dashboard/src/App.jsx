@@ -24,9 +24,13 @@ import "./App.css";
 const TIMEFRAMES = [
   { key: "1m", label: "1m", interval: "1min", staleMs: 90_000 },
   { key: "5m", label: "5m", interval: "5min", staleMs: 360_000 },
+  { key: "15m", label: "15m", interval: "15min", staleMs: 900_000 },
   { key: "1h", label: "1H", interval: "1h", staleMs: 1_200_000 },
   { key: "4h", label: "4H", interval: "4h", staleMs: 2_400_000 },
 ];
+
+// Normal chat: higher TFs only (cheap + stable). Super Boost: all five, deep.
+const NORMAL_TFS = ["5m", "1h", "4h"];
 
 function formatTime(ts) {
   if (!ts) return "—";
@@ -36,7 +40,13 @@ function formatTime(ts) {
 function App() {
   const [chartVisible, setChartVisible] = useState(true);
   const [activeTF, setActiveTF] = useState("1m");
-  const [data, setData] = useState({ "1m": [], "5m": [], "1h": [], "4h": [] });
+  const [data, setData] = useState({
+    "1m": [],
+    "5m": [],
+    "15m": [],
+    "1h": [],
+    "4h": [],
+  });
   const [updating, setUpdating] = useState({});
   const [lastFetch, setLastFetch] = useState({});
   const [error, setError] = useState("");
@@ -47,6 +57,7 @@ function App() {
   const [quota, setQuota] = useState(() => getQuotaInfo());
   const [storage, setStorage] = useState(null);
   const [news, setNews] = useState(null);
+  const [boost, setBoost] = useState(false);
   const [theme, setTheme] = useState(() => {
     try {
       const saved = localStorage.getItem("xau_theme");
@@ -129,20 +140,22 @@ function App() {
     setActiveTF(key);
   }
 
-  function buildMarketContext(dataObj) {
+  function buildMarketContext(dataObj, deep) {
     const timeframes = {};
     for (const tf of TIMEFRAMES) {
+      if (!deep && !NORMAL_TFS.includes(tf.key)) continue;
       const arr = dataObj[tf.key] || [];
       const last = arr[arr.length - 1];
       const prev = arr[arr.length - 2];
+      const n = deep ? (tf.key === activeTF ? 60 : 30) : tf.key === activeTF ? 30 : 10;
       timeframes[tf.key] = {
         count: arr.length,
         last: last?.close ?? null,
         change: last && prev ? +(last.close - prev.close).toFixed(2) : null,
-        candles: tf.key === activeTF ? arr.slice(-30) : arr.slice(-10),
+        candles: arr.slice(-n),
       };
     }
-    return { active: activeTF, timeframes };
+    return { active: activeTF, boost: deep, timeframes };
   }
 
   async function handleAskAI() {
@@ -154,24 +167,30 @@ function App() {
     setHistory((h) => [...h, { role: "user", text: q }]);
     setAsking(true);
     try {
-      // Fresh data for chat, but only for stale timeframes.
+      // Normal: refresh only stale higher TFs (5m/1h/4h).
+      // Super Boost: force-fresh all five timeframes, deep context.
       setAskPhase("fetch");
       const nowTs = Date.now();
+      const target = boost
+        ? TIMEFRAMES
+        : TIMEFRAMES.filter((tf) => NORMAL_TFS.includes(tf.key));
       const current = {};
       TIMEFRAMES.forEach((tf) => {
         current[tf.key] = data[tf.key] || [];
       });
       await Promise.all(
-        TIMEFRAMES.map(async (tf) => {
-          const last = lastFetch[tf.key] || 0;
-          const hasData = (current[tf.key] || []).length > 0;
-          if (hasData && nowTs - last < tf.staleMs) return;
+        target.map(async (tf) => {
+          if (!boost) {
+            const last = lastFetch[tf.key] || 0;
+            const hasData = (current[tf.key] || []).length > 0;
+            if (hasData && nowTs - last < tf.staleMs) return;
+          }
           const fresh = await loadTF(tf);
           if (fresh?.length) current[tf.key] = fresh;
         })
       );
       setAskPhase("ai");
-      const result = await askAI(q, buildMarketContext(current));
+      const result = await askAI(q, buildMarketContext(current, boost), boost);
       const text =
         result?.candidates?.[0]?.content?.parts?.[0]?.text ||
         "AI returned no response.";
@@ -284,6 +303,8 @@ function App() {
             history={history}
             asking={asking}
             phase={askPhase}
+            boost={boost}
+            onToggleBoost={() => setBoost((b) => !b)}
             onSend={handleAskAI}
           />
           <Memory storage={storage} onSave={handleSaveMemory} />

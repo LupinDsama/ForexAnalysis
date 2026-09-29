@@ -97,19 +97,24 @@ Chat ──► fetch lại các khung ĐÃ CŨ (1m>90s, 5m>6', 1H>20', 4H>40')
 
 ### 4.2. Chat với AI (mỗi câu hỏi)
 
+Chế độ thường: chỉ dùng 4h/1h/5m (nến ít). **Super Boost** (nút ⚡): lấy tươi
+cả 5 khung (4h/1h/15m/5m/1m), nến sâu (60 active + 30 các khung), AI 2500 tokens.
+
 ```text
-User hỏi
-  │  1. Chụp ảnh chart đang xem (canvas → dataURL, chỉ giữ vài tin gần nhất)
-  │  2. Fetch tươi các khung đã cũ (song song)
+User hỏi (+ boost?)
+  │  1. Chụp ảnh chart đang xem
+  │  2. Fetch tươi các khung (thường: khung cũ trong 5m/1h/4h · boost: cả 5)
   ▼
-POST /api/chat { prompt, marketData: { active, timeframes: {1m,5m,1h,4h} } }
-  │  3. Worker nạp context D1: 15 memories gần nhất + snapshot nến cuối
-  │  4. Worker nạp macro: lịch ForexFactory + headlines (cache 60')
-  │  5. Lưu snapshot nến hiện tại vào D1
-  │  6. Gọi Workers AI (system: analyst tiếng Việt + memory + macro + nến)
-  │  7. Lưu bài phân tích vào memories, cập nhật usage_bytes, trả về
+POST /api/chat { prompt, marketData, boost }
+  │  3. Chấm backtest: setup OPEN cũ so với nến 1m mới → WON/LOST + bài học
+  │  4. Nạp context D1: track record + 15 memories + snapshot + macro
+  │  5. Lưu snapshot nến hiện tại
+  │  6. Gọi Workers AI (Qwen3-30B)
+  │  7. Lưu chọn lọc: setup số học được → bảng setups (OPEN);
+  │     prompt có [phân tích] → lesson full; setup đủ số → analysis gọn;
+  │     chat xã giao → không lưu gì
   ▼
-Frontend: markdown + thẻ Setup (Xu hướng/Entry/TP/SL) + ảnh chart + storage mới
+Frontend: markdown + thẻ Setup (Xu hướng/Kiểu/Entry/TP/SL/Lệnh chờ/Scalp/Swing)
 ```
 
 - Response Worker giữ shape kiểu Gemini (`candidates[0].content.parts[0].text`)
@@ -130,7 +135,8 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 
 | Bảng | Nội dung |
 |---|---|
-| `memories` | `analysis` (tự lưu mỗi câu chat, ≤3000 ký tự), `rule`/`note` (lưu tay) — giữ tối đa 500, tỉa cũ |
+| `memories` | `analysis` (setup đủ số, gọn), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay) — giữ tối đa 500 |
+| `setups` | setup số học được từ mỗi câu trả lời (trend/style/entry/tp/sl, status OPEN→WON/LOST) — chấm tự động bằng nến mới |
 | `snapshots` | nến gọn `[[t,o,h,l,c],...]` mỗi lần chat |
 | `news_cache` | payload tin vĩ mô + `updated_at` |
 | `meta` | `usage_bytes` — byte tích lũy để hiển thị (ước tính, không trừ khi tỉa) |

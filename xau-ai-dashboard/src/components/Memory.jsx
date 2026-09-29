@@ -22,6 +22,7 @@ export default function Memory({ storage, onSave }) {
   const pct = Math.min(100, (used / limit) * 100);
   const tables = storage?.tables || {};
   const recent = storage?.recent || [];
+  const setups = tables.setups || {};
 
   async function handleSave() {
     if (!text.trim() || saving) return;
@@ -50,7 +51,12 @@ export default function Memory({ storage, onSave }) {
       </div>
       <p className="muted">
         Phân tích: {tables.memories ?? "—"} · Snapshot nến:{" "}
-        {tables.snapshots ?? "—"} · Mỗi câu chat tự nạp context cũ + lưu lại
+        {tables.snapshots ?? "—"} · Setup: {setups.OPEN ?? 0} mở /{" "}
+        {setups.WON ?? 0} thắng / {setups.LOST ?? 0} thua
+      </p>
+      <p className="muted">
+        Chỉ lưu điều quan trọng: setup có Entry/TP/SL, bài học [phân tích],
+        quy tắc tay — chat xã giao không lưu
       </p>
 
       <div className="memory-form">

@@ -224,8 +224,7 @@
   margin-bottom: 12px;
 }
 
-.analysis h2, .chat h2, .memory h2 {
-  font-size: 13px;
+.analysis h2, .chat h2, .memory h2 {  font-size: 13px;
   margin: 0 0 10px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -244,6 +243,36 @@
 }
 
 /* ---------- chat ---------- */
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.chat-head h2 {
+  flex: 1;
+  margin: 0;
+}
+
+.boost {
+  background: var(--seg-bg);
+  color: var(--muted);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.boost.on {
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+}
 
 .chat .history {
   max-height: 520px;
