@@ -96,6 +96,8 @@ Chat boost ──► fetch tươi cả 6 khung (1m/5m/15m/1h/4h/1D)
 
 - Worker validate `interval ∈ {1min,5min,15min,1h,4h,1day}`, sai → về `1min`.
 - Frontend convert `datetime/open/high/low/close` (string) → `{time (unix), o/h/l/c}` cho chart.
+  Giờ Twelve bị ép `timezone=UTC` ở Worker và parse UTC tường minh ở client
+  (chuỗi không múi giờ mà parse local sẽ lệch verdict hàng giờ).
 - Mỗi request Twelve = 1 credit. Free ~800/ngày; app đếm trong `localStorage`
   (`xau_req_count_YYYY-MM-DD`), chạm ~750 thì dừng request và báo.
 

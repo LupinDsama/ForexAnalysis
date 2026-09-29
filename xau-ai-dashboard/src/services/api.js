@@ -94,12 +94,25 @@ export async function cleanStorage(password) {  const response = await fetch(`${
   return data;
 }
 
+function parseTwelveTime(s) {
+  if (typeof s !== "string") return NaN;
+  const t = s.trim();
+  // "YYYY-MM-DD HH:MM:SS" (UTC per Worker request) or "YYYY-MM-DD".
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(t)
+    ? `${t}T00:00:00Z`
+    : t.replace(" ", "T") + "Z";
+  return Math.floor(Date.parse(iso) / 1000);
+}
+
 export function convertCandles(values) {
   if (!Array.isArray(values)) return [];
   return [...values]
     .reverse()
     .map((candle) => ({
-      time: Math.floor(new Date(candle.datetime).getTime() / 1000),
+      // Twelve datetimes are forced to UTC server-side; parse as UTC
+      // explicitly (a bare "YYYY-MM-DD HH:MM:SS" would parse as LOCAL time
+      // and shift verdict windows by hours).
+      time: parseTwelveTime(candle.datetime),
       open: Number(candle.open),
       high: Number(candle.high),
       low: Number(candle.low),

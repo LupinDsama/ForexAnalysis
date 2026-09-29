@@ -1043,6 +1043,8 @@ async function getXAUUSD(env, interval) {
   apiUrl.searchParams.set("symbol", "XAU/USD");
   apiUrl.searchParams.set("interval", interval);
   apiUrl.searchParams.set("outputsize", String(OUTPUT_SIZES[interval] || 200));
+  // Force UTC datetimes so candle times align with setup timestamps.
+  apiUrl.searchParams.set("timezone", "UTC");
   apiUrl.searchParams.set("apikey", env.TWELVE_DATA_API_KEY);
 
   const response = await fetch(apiUrl);
@@ -1056,6 +1058,8 @@ async function getXAUUSD(env, interval) {
   if (data.status === "error") {
     return json(data, 400);
   }
+  // Anchor for clients: unix seconds when Twelve was fetched.
+  data._fetched_at = Math.floor(Date.now() / 1000);
 
   // Judge open setups on every market fetch (not only on chat):
   // entry/TP/SL were noted with timestamps when the AI answered.
