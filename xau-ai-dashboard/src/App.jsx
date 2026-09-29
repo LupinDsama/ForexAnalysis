@@ -44,6 +44,11 @@ function formatTime(ts) {
   return new Date(ts).toLocaleTimeString();
 }
 
+function formatCountdown(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
 function App() {
   const [chartVisible, setChartVisible] = useState(true);
   const [activeTF, setActiveTF] = useState("1m");
@@ -69,6 +74,8 @@ function App() {
   const [liveOn, setLiveOn] = useState(true);
   const [liveStatus, setLiveStatus] = useState("off");
   const [liveTick, setLiveTick] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [nextLiveAt, setNextLiveAt] = useState(null);
   const [theme, setTheme] = useState(() => {
     try {
       const saved = localStorage.getItem("xau_theme");
@@ -177,6 +184,12 @@ function App() {
     loadTF(TIMEFRAMES[0]);
   }, [loadTF]);
 
+  // 1s ticker for the live countdown.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   // Live ticks (Yahoo COMEX via Worker, free, no Twelve quota).
   // Ticks fold into a forming candle per timeframe; the visible chart
   // updates in place. Twelve history still seeds every timeframe.
@@ -187,6 +200,7 @@ function App() {
     }
     let stop = false;
     setLiveStatus("connecting");
+    setNextLiveAt(Date.now() + 30_000);
 
     function onTick(price, timeMs) {
       if (stop || !Number.isFinite(price)) return;
@@ -241,6 +255,8 @@ function App() {
         }
       } catch {
         if (!stop) setLiveStatus("error");
+      } finally {
+        if (!stop) setNextLiveAt(Date.now() + 30_000);
       }
     }
 
@@ -430,6 +446,9 @@ function App() {
               {liveStatus === "live" && liveTick ? (
                 <span className="live-on">
                   ● LIVE {liveTick.price} Yahoo
+                  {nextLiveAt
+                    ? ` (${formatCountdown(nextLiveAt - now)})`
+                    : ""}
                   {Date.now() - liveTick.time > 600_000 ? " (giá cũ)" : ""}
                 </span>
               ) : liveStatus === "connecting" ? (
