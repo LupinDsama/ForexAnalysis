@@ -10,7 +10,7 @@ Live: `https://lupindsama.github.io/ForexAnalysis/`
 |---|---|
 | Frontend | Vite 8 + React 19, `lightweight-charts` v5 (vẽ nến), `react-markdown` + `remark-gfm` (hiển thị chat) |
 | Backend | Cloudflare Worker `xau-ai-backend` (`https://xau-ai-backend.lupindsama.workers.dev`) |
-| AI | Cloudflare Workers AI, model `@cf/qwen/qwen3-30b-a3b-fp8` (temperature 0.7, max 1500 tokens) |
+| AI | Cloudflare Workers AI, model `@cf/qwen/qwen3-30b-a3b-fp8` (temperature 0.7, max 1500 tokens, boost 2500) |
 | Dữ liệu nến | Twelve Data `/time_series` (qua Worker, key nằm server-side) |
 | Tin vĩ mô | Lịch ForexFactory (feed XML Faireconomy) + headlines trang Gold/USD |
 | Bộ nhớ dài hạn | Cloudflare D1 `xau-memory` (SQLite ~5GB free) |
@@ -31,21 +31,23 @@ ForexAnalysis/                      # repo root = site Pages (branch deploy)
     ├── .env                        # local, gitignored — VITE_WORKER_URL (+ key cũ đã bỏ)
     ├── src/
     │   ├── main.jsx                # entry point
-    │   ├── App.jsx                 # state trung tâm: data 4 khung, chat, theme, quota
-    │   ├── App.css                 # theme sáng/tối (biến CSS), layout, responsive
+    │   ├── App.jsx                 # state trung tâm: data 6 khung, chat, theme/style, quota, live
+    │   ├── App.css                 # tokens sáng/tối + 3 style (ios/terminal/huawei), layout, responsive
     │   ├── components/
-    │   │   ├── Chart.jsx           # wrapper Lightweight Charts (candlestick, screenshot)
+    │   │   ├── Chart.jsx           # wrapper Lightweight Charts (candlestick, screenshot, update live)
     │   │   ├── Controls.jsx        # nút Chart ON/OFF + quota Twelve Data
-    │   │   ├── Analysis.jsx        # giá/change 4 khung + giờ cập nhật
-    │   │   ├── Chat.jsx            # bóng chat, markdown, thẻ Setup, ảnh chart
+    │   │   ├── Analysis.jsx        # giá/change 6 khung + giờ cập nhật
+    │   │   ├── Chat.jsx            # bóng chat, markdown, thẻ Setup, ảnh chart, Super Boost
+    │   │   ├── Orders.jsx          # dropdown lệnh đang mở (scroll, tự refresh khi mở)
     │   │   ├── News.jsx            # list tin vĩ mô + refresh
-    │   │   └── Memory.jsx          # thanh dung lượng D1 + lưu quy tắc/ghi chú
+    │   │   └── Memory.jsx          # dung lượng D1 + điểm pattern + lưu tay + dọn kho (cổng pass)
     │   └── services/
-    │       └── api.js              # gọi Worker, convert nến, quota localStorage
+    │       └── api.js              # gọi Worker (market/chat/news/storage/live), convert nến, quota localStorage
     ├── worker/
-    │   ├── index.js                # toàn bộ backend (endpoints + AI + D1)
+    │   ├── index.js                # toàn bộ backend (endpoints + AI + D1 + live)
     │   ├── wrangler.toml           # tên, bindings AI/DB, placement, secrets khai báo
-    │   ├── schema.sql              # DDL 3 bảng (memories, snapshots, meta)
+    │   ├── schema.sql              # DDL 6 bảng (memories, snapshots, news_cache, meta, setups, scores)
+    │   ├── seed_kb.sql             # 15 kiến thức nền XAUUSD nạp 1 lần (kind kb)
     │   └── .dev.vars.example       # mẫu secrets local (gitignored)
     └── .github/workflows/
         ├── pages.yml               # (dự phòng) build + deploy Pages qua Actions
@@ -70,9 +72,10 @@ ForexAnalysis/                      # repo root = site Pages (branch deploy)
                     └──────────┬────────┬─────────┘
                                │        │     (cùng Worker)
                                ▼        ▼        ▼
-                   Nến 1m   Qwen3   memories/
-                   5m 1H   30B     snapshots/
-                   4H               news_cache/meta
+                   Nến 1m     Qwen3   memories/ kb/
+                   5m 15m     30B     snapshots/ setups/
+                   1H 4H 1D           scores/ news_cache/meta
+                   (+ live Yahoo GC=F qua /api/live, poll 30s)
 ```
 
 > Lịch sử: từng dùng Gemini qua Worker nhưng IP egress của Cloudflare bị
@@ -87,29 +90,32 @@ ForexAnalysis/                      # repo root = site Pages (branch deploy)
 Mở trang ──► GET /api/xauusd?interval=1min ──► chart 1m
 Chuyển tab ──► vẽ cache (trống thì gợi ý bấm ⟳, KHÔNG tự fetch)
 Bấm ⟳ ──► GET /api/xauusd?interval=<khung đang xem>
-Chat ──► fetch lại các khung ĐÃ CŨ (1m>90s, 5m>6', 1H>20', 4H>40')
+Chat thường ──► fetch lại khung cũ trong 5m/1h/4h (1m>90s, 5m>6', 1H>20', 4H>40')
+Chat boost ──► fetch tươi cả 6 khung (1m/5m/15m/1h/4h/1D)
 ```
 
-- Worker validate `interval ∈ {1min,5min,1h,4h}`, sai → về `1min`; `outputsize=200`.
+- Worker validate `interval ∈ {1min,5min,15min,1h,4h,1day}`, sai → về `1min`.
 - Frontend convert `datetime/open/high/low/close` (string) → `{time (unix), o/h/l/c}` cho chart.
 - Mỗi request Twelve = 1 credit. Free ~800/ngày; app đếm trong `localStorage`
   (`xau_req_count_YYYY-MM-DD`), chạm ~750 thì dừng request và báo.
 
 ### 4.2. Chat với AI (mỗi câu hỏi)
 
-Chế độ thường: chỉ dùng 4h/1h/5m (nến ít). **Super Boost** (nút ⚡): lấy tươi
-cả 5 khung (4h/1h/15m/5m/1m), nến sâu (60 active + 30 các khung), AI 2500 tokens.
+Chế độ thường: chỉ dùng 4h/1h/5m (nến ít). **Super Boost**: lấy tươi
+cả 6 khung (4h/1h/15m/5m/1m/1D), nến sâu (60 active + 30 các khung), AI 2500 tokens.
 
 ```text
 User hỏi (+ boost?)
   │  1. Chụp ảnh chart đang xem
-  │  2. Fetch tươi các khung (thường: khung cũ trong 5m/1h/4h · boost: cả 5)
+  │  2. Fetch tươi các khung (thường: khung cũ trong 5m/1h/4h · boost: cả 6)
   ▼
 POST /api/chat { prompt, marketData, boost }
   │  3. Chấm backtest: setup OPEN cũ so với nến mới → chạm TP trước THẮNG,
   │     chạm SL trước THUA (mọi trend tính theo biên, cùng nến tính THUA),
-  │     + điểm pattern (thắng +1, thua -1). Mỗi request /api/xauusd cũng chấm.
-  │  4. Nạp context D1: điểm pattern + track record + 15 memories + snapshot + macro
+  │     scalp thắng +1, swing thắng +3, thua -1. Mỗi request /api/xauusd cũng chấm.
+  │  4. Nạp context D1: điểm pattern + track record + digest tri thức + 15 memories
+  │     + snapshot + macro + kiến thức nền kb (luôn nạp) + digest kỹ thuật
+  │     (RSI14, vị trí biên, ATR, chuỗi, swing H/L tính sẵn từng khung)
   │  5. Lưu snapshot nến hiện tại
   │  6. Gọi Workers AI (Qwen3-30B)
   │  7. Lưu chọn lọc: setup số học được → bảng setups (OPEN, kèm created_ts
@@ -122,16 +128,10 @@ Frontend: markdown + thẻ Setup (Xu hướng/Kiểu/Entry/TP/SL/Lệnh chờ/Sc
 (TP dưới entry không thể là LONG).
 ```
 
-### 4.5. Giá live (không tốn Twelve)
-
-```text
-Browser ──poll 30s──► GET /api/live ──► Yahoo GC=F (COMEX futures, cache 30s
-ở Worker) ──► gộp tick thành nến đang hình thành từng khung ──► series.update()
-```
-- Twelve chỉ còn: sử ban đầu, ⟳ tay, chat phân tích.
-- TV WebSocket nối thẳng đã test: local qua, github.io bị từ chối origin.
-  Yahoo thiếu CORS nên phải proxy qua Worker. Giá futures lệch spot vài đô:
-  chart tham khảo OK, phân tích vẫn dùng nến Twelve.
+- Response Worker giữ shape kiểu Gemini (`candidates[0].content.parts[0].text`)
+  để frontend không phải đổi.
+- Giới hạn prompt: kb + knowledge + memory ≤6000+6000 ký tự, macro ≤3200,
+  market object ≤12000, snapshot ≤15000.
 
 - Response Worker giữ shape kiểu Gemini (`candidates[0].content.parts[0].text`)
   để frontend không phải đổi.
@@ -160,16 +160,30 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 
 Panel Bộ nhớ D1 hiện `đã dùng / 5GB`, số dòng từng bảng, 5 mục gần nhất.
 
+### 4.5. Giá live (không tốn Twelve)
+
+```text
+Browser ──poll 30s──► GET /api/live ──► Yahoo GC=F (COMEX futures, cache 30s
+ở Worker, fallback giá cũ khi Yahoo lỗi) ──► gộp tick thành nến đang hình
+thành từng khung ──► series.update() tại chỗ
+```
+- Twelve chỉ còn: sử ban đầu, ⟳ tay, chat phân tích.
+- TV WebSocket nối thẳng đã test: local qua, github.io bị từ chối origin.
+  Yahoo thiếu CORS nên phải proxy qua Worker. Giá futures lệch spot vài đô:
+  chart tham khảo OK, phân tích vẫn dùng nến Twelve.
+- Nút Live ON/OFF; trạng thái hiện giá + giờ tick, quá 10' báo "giá cũ".
+
 ## 5. API Worker
 
 | Endpoint | Method | Vào | Ra |
 |---|---|---|---|
 | `/api/xauusd?interval=` | GET | `1min/5min/15min/1h/4h/1day`, outputsize 500 (intraday) / 365 daily (~1 năm), cùng 1 credit | JSON Twelve (`values[]`) |
-| `/api/chat` | POST | `{prompt, marketData}` | `{candidates:[...], storage}` |
+| `/api/chat` | POST | `{prompt, marketData, boost}` | `{candidates:[...], storage}` |
 | `/api/memory` | POST | `{kind: rule/note, content}` | `{ok, storage}` |
-| `/api/storage` | GET | — | `{used_bytes, limit_bytes, tables, recent[10]}` |
+| `/api/storage` | GET | — | `{used_bytes, limit_bytes, tables, scores, open_setups[≤20], recent[10]}` |
 | `/api/storage/clean` | POST | `{password}` — cổng chống bấm nhầm (KHÔNG phải bảo mật thật, key nằm public) | `{ok, stats, storage}` — xóa snapshot >7 ngày (giữ 10 mới nhất), nén snapshot >3 ngày còn 50 nến cuối, analyses giữ 100 mới nhất (giữ hết lesson/rule/note), setups đã chấm >30 ngày; recompute usage |
 | `/api/news[?refresh=1]` | GET | — | `{events[≤15], headlines[≤8], updated_at}` |
+| `/api/live` | GET | — | `{price, time, source}` (+ `cached`/`stale` khi phù hợp) |
 | `/api/whereami` | GET | — | debug egress (trace Cloudflare) |
 
 ## 6. Workflow vận hành
@@ -224,3 +238,8 @@ npx.cmd wrangler d1 execute xau-memory --remote --file=schema.sql
    macro vào prompt mỗi câu chat.
 5. **Branch-deploy thay vì Actions**: `index.html` nằm root `main` cho đơn giản;
    giữ `pages.yml`/`worker.yml` dự phòng.
+6. **Live qua Yahoo-proxy**: TV WebSocket bị chặn origin production, Yahoo
+   thiếu CORS — proxy 30s qua Worker là đường duy nhất đã kiểm chứng.
+7. **UI theo tasteskill** (`design-taste-frontend`, redesign-overhaul, dials
+   5/3/7): chuyển style iOS/Terminal/Huawei + sáng/tối, footer credits
+   Fexxwer/LupinDsama, không thêm dependency.
