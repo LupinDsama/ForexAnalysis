@@ -153,7 +153,7 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 
 | Bảng | Nội dung |
 |---|---|
-| `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `kb` (15 kiến thức nền XAUUSD nạp sẵn, luôn nạp vào prompt), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
+| `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `kb` (25 kiến thức nền: drivers vàng + phương pháp/RR/rủi ro, luôn nạp vào prompt), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
 | `setups` | setup số học được từ mỗi câu trả lời (trend/style/entry/tp/sl + `created_ts` ghi thời điểm AI trả lời, status OPEN→WON/LOST) — chấm tự động bằng nến mới |
 | `scores` | điểm từng pattern (`SCALPING LONG`...): scalp thắng +1, swing thắng +3, thua -1, kèm won/lost — pattern điểm dương thành cơ sở trong digest, nạp vào prompt |
 | `snapshots` | nến gọn `[[t,o,h,l,c],...]` mỗi lần chat |
@@ -185,7 +185,7 @@ thành từng khung ──► series.update() tại chỗ
 | `/api/storage` | GET | — | `{used_bytes, limit_bytes, tables, scores, open_setups[≤20], recent[10]}` |
 | `/api/storage/clean` | POST | `{password}` — cổng chống bấm nhầm (KHÔNG phải bảo mật thật, key nằm public) | `{ok, stats, storage}` — xóa snapshot >7 ngày (giữ 10 mới nhất), nén snapshot >3 ngày còn 50 nến cuối, analyses giữ 100 mới nhất (giữ hết lesson/rule/note), setups đã chấm >30 ngày; recompute usage |
 | `/api/news[?refresh=1]` | GET | — | `{events[≤15], headlines[≤8], updated_at}` |
-| `/api/live` | GET | — | `{price, time, source}` (+ `cached`/`stale` khi phù hợp) |
+| `/api/live` | GET | — | `{price, time, source}` (+ `cached`/`stale` khi phù hợp). Nguồn theo thứ tự: Swissquote XAU/USD → gold-api → Yahoo GC=F. Chart gộp tick thành nến (`series.update`), nút Lệnh bật/tắt markers |
 | `/api/whereami` | GET | — | debug egress (trace Cloudflare) |
 
 ## 6. Workflow vận hành

@@ -18,7 +18,7 @@ const THEMES = {
   },
 };
 
-const Chart = forwardRef(function Chart({ data, theme = "dark" }, ref) {
+const Chart = forwardRef(function Chart({ data, markers = [], theme = "dark" }, ref) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
@@ -93,6 +93,15 @@ const Chart = forwardRef(function Chart({ data, theme = "dark" }, ref) {
     seriesRef.current.setData(data);
     chartRef.current?.timeScale().fitContent();
   }, [data]);
+
+  useEffect(() => {
+    if (!seriesRef.current) return;
+    try {
+      seriesRef.current.setMarkers(markers);
+    } catch {
+      // markers with unmatched times are ignored
+    }
+  }, [markers, data]);
 
   return (
     <div

@@ -74,6 +74,7 @@ function App() {
   const [liveOn, setLiveOn] = useState(true);
   const [liveStatus, setLiveStatus] = useState("off");
   const [liveTick, setLiveTick] = useState(null);
+  const [showOrders, setShowOrders] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [nextLiveAt, setNextLiveAt] = useState(null);
   const [theme, setTheme] = useState(() => {
@@ -104,6 +105,8 @@ function App() {
   // Forming live candle per TF + last Twelve history candle (seed/guard).
   const liveRef = useRef({});
   const lastHistRef = useRef({});
+  // Monotonic clock for live staleness (wall clock may be wrong).
+  const lastTickPerf = useRef(0);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -202,10 +205,11 @@ function App() {
     setLiveStatus("connecting");
     setNextLiveAt(Date.now() + 30_000);
 
-    function onTick(price, timeMs) {
+    function onTick(price, timeMs, source) {
       if (stop || !Number.isFinite(price)) return;
+      lastTickPerf.current = performance.now();
       const tickSec = Math.floor((timeMs || Date.now()) / 1000);
-      setLiveTick({ price, time: timeMs || Date.now() });
+      setLiveTick({ price, time: timeMs || Date.now(), source: source || "" });
       for (const tf of TIMEFRAMES) {
         const bound = TF_BOUNDS[tf.key];
         if (!bound) continue;
@@ -251,7 +255,7 @@ function App() {
         const r = await getLive();
         if (!stop && Number.isFinite(r.price)) {
           setLiveStatus("live");
-          onTick(r.price, r.time);
+          onTick(r.price, r.time, r.source);
         }
       } catch {
         if (!stop) setLiveStatus("error");
@@ -361,6 +365,48 @@ function App() {
   const activeTFConf = TIMEFRAMES.find((t) => t.key === activeTF);
   const activeData = data[activeTF] || [];
 
+  // Markers for open + judged setups, snapped to active series candles.
+  function buildMarkers() {
+    if (!showOrders) return [];
+    const series = activeData;
+    if (!series.length) return [];
+    const bound = TF_BOUNDS[activeTF] || 60;
+    const snap = (ts) => {
+      let best = null;
+      let bestDiff = bound * 1.5;
+      for (const c of series) {
+        const d = Math.abs(c.time - ts);
+        if (d < bestDiff) {
+          bestDiff = d;
+          best = c.time;
+        }
+      }
+      return best;
+    };
+    const out = [];
+    for (const o of storage?.open_setups || []) {
+      const t = snap(o.created_ts || Date.parse(o.created_at) / 1000);
+      if (t == null) continue;
+      if (o.trend === "SHORT") {
+        out.push({ time: t, position: "aboveBar", color: "#1d4ed8", shape: "arrowDown", text: "E" });
+      } else if (o.trend === "LONG") {
+        out.push({ time: t, position: "belowBar", color: "#1d4ed8", shape: "arrowUp", text: "E" });
+      } else {
+        out.push({ time: t, position: "belowBar", color: "#1d4ed8", shape: "circle", text: "E" });
+      }
+    }
+    for (const o of storage?.judged_setups || []) {
+      const t = snap(o.created_ts || Date.parse(o.created_at) / 1000);
+      if (t == null) continue;
+      if (o.status === "WON") {
+        out.push({ time: t, position: "belowBar", color: "#22c55e", shape: "circle", text: "TP" });
+      } else if (o.status === "LOST") {
+        out.push({ time: t, position: "aboveBar", color: "#ef4444", shape: "circle", text: "SL" });
+      }
+    }
+    return out;
+  }
+
   return (
     <div className="app">
       <header>
@@ -418,6 +464,13 @@ function App() {
             >
               ⟳
             </button>
+            <button
+              className={showOrders ? "refresh-one orders-on" : "refresh-one"}
+              onClick={() => setShowOrders((v) => !v)}
+              title="Hiện lệnh mở + thắng/thua lên chart"
+            >
+              Lệnh
+            </button>
           </div>
 
           {chartVisible ? (
@@ -426,6 +479,7 @@ function App() {
                 key={activeTF + theme}
                 ref={chartRef}
                 data={activeData}
+                markers={buildMarkers()}
                 theme={theme}
               />
             ) : (
@@ -445,11 +499,13 @@ function App() {
             <span className="live-wrap">
               {liveStatus === "live" && liveTick ? (
                 <span className="live-on">
-                  ● LIVE {liveTick.price} Yahoo
+                  ● LIVE {liveTick.price} {liveTick.source || ""}
                   {nextLiveAt
                     ? ` (${formatCountdown(nextLiveAt - now)})`
                     : ""}
-                  {Date.now() - liveTick.time > 600_000 ? " (giá cũ)" : ""}
+                  {performance.now() - lastTickPerf.current > 600_000
+                    ? " (giá cũ)"
+                    : ""}
                 </span>
               ) : liveStatus === "connecting" ? (
                 <span className="muted">Đang nối live...</span>

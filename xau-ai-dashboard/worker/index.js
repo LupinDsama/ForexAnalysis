@@ -186,8 +186,14 @@ async function storageInfo(db) {
   const used = Number(usage?.value || 0);
   const openSetups = await db
     .prepare(
-      `SELECT id, trend, style, entry, tp, sl, created_at FROM setups
+      `SELECT id, trend, style, entry, tp, sl, created_at, created_ts FROM setups
        WHERE status = 'OPEN' ORDER BY id DESC LIMIT 20`
+    )
+    .all();
+  const judgedSetups = await db
+    .prepare(
+      `SELECT id, trend, style, entry, tp, sl, status, created_ts FROM setups
+       WHERE status != 'OPEN' ORDER BY id DESC LIMIT 20`
     )
     .all();
   return {
@@ -200,6 +206,7 @@ async function storageInfo(db) {
     },
     scores: sc.results || [],
     open_setups: openSetups.results || [],
+    judged_setups: judgedSetups.results || [],
     recent: recent.results || [],
   };
 }
@@ -211,8 +218,35 @@ async function storageInfoResponse(env) {
 }
 
 const LIVE_TTL_MS = 30_000;
-const YAHOO_URL =
-  "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1m&range=1d";
+// Spot sources, closest first. Swissquote BBO tracks Twelve spot within
+// cents; gold-api is a fresh fallback; Yahoo futures lags and drifts dollars.
+const LIVE_SOURCES = [
+  { name: "Swissquote XAU/USD", url: "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD" },
+  { name: "gold-api", url: "https://api.gold-api.com/price/XAU" },
+  { name: "Yahoo GC=F", url: "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1m&range=1d" },
+];
+
+function parseLiveBody(source, j, nowMs) {
+  if (source.startsWith("Swissquote")) {
+    const q = j?.[0];
+    const p = q?.spreadProfilePrices?.[0];
+    const bid = Number(p?.bid);
+    const ask = Number(p?.ask);
+    if (Number.isFinite(bid) && Number.isFinite(ask)) {
+      return { price: Math.round(((bid + ask) / 2) * 100) / 100, time: Number(q.ts) || nowMs };
+    }
+  } else if (source === "gold-api") {
+    const price = Number(j?.price);
+    const time = Date.parse(j?.updatedAt) || nowMs;
+    if (Number.isFinite(price)) return { price, time };
+  } else {
+    const meta = j?.chart?.result?.[0]?.meta || {};
+    const price = Number(meta.regularMarketPrice);
+    const time = Number(meta.regularMarketTime) * 1000 || nowMs;
+    if (Number.isFinite(price)) return { price, time };
+  }
+  throw new Error("bad price from " + source);
+}
 
 async function livePrice(env) {
   const nowMs = Date.now();
@@ -220,7 +254,7 @@ async function livePrice(env) {
     try {
       await ensureSchema(env.DB);
       const cached = await env.DB
-        .prepare(`SELECT value FROM meta WHERE key = 'yahoo_live'`)
+        .prepare(`SELECT value FROM meta WHERE key = 'live_price'`)
         .first();
       if (cached?.value) {
         const c = JSON.parse(cached.value);
@@ -230,7 +264,7 @@ async function livePrice(env) {
             price: c.price,
             time: c.time,
             cached: true,
-            source: "Yahoo GC=F",
+            source: c.source || "live",
           });
         }
       }
@@ -239,37 +273,48 @@ async function livePrice(env) {
     }
   }
   try {
-    const r = await fetch(YAHOO_URL, {
-      headers: { "User-Agent": "Mozilla/5.0 XAUUSD-Dashboard/1.0" },
-    });
-    if (!r.ok) throw new Error("Yahoo HTTP " + r.status);
-    const j = await r.json();
-    const meta = j?.chart?.result?.[0]?.meta || {};
-    const price = Number(meta.regularMarketPrice);
-    const time = Number(meta.regularMarketTime) * 1000 || nowMs;
-    if (!Number.isFinite(price)) throw new Error("Yahoo bad price");
-    const out = { price, time, source: "Yahoo GC=F" };
-    if (env.DB) {
+    let lastError = null;
+    for (const s of LIVE_SOURCES) {
       try {
-        await env.DB.prepare(
-          `INSERT OR REPLACE INTO meta(key, value) VALUES('yahoo_live', ?)`
-        )
-          .bind(JSON.stringify({ price, time, fetchedAt: nowMs }))
-          .run();
-      } catch {
-        // cache is best-effort
+        const r = await fetch(s.url, {
+          headers: { "User-Agent": "Mozilla/5.0 XAUUSD-Dashboard/1.0" },
+        });
+        if (!r.ok) throw new Error(s.name + " HTTP " + r.status);
+        const parsed = parseLiveBody(s.name, await r.json(), nowMs);
+        const out = { ...parsed, source: s.name };
+        if (env.DB) {
+          try {
+            await env.DB.prepare(
+              `INSERT OR REPLACE INTO meta(key, value) VALUES('live_price', ?)`
+            )
+              .bind(
+                JSON.stringify({
+                  price: out.price,
+                  time: out.time,
+                  source: out.source,
+                  fetchedAt: nowMs,
+                })
+              )
+              .run();
+          } catch {
+            // cache is best-effort
+          }
+        }
+        return json(out);
+      } catch (e) {
+        lastError = e;
       }
     }
-    return json(out);
+    throw lastError || new Error("all live sources failed");
   } catch (error) {
     if (env.DB) {
       try {
         const stale = await env.DB
-          .prepare(`SELECT value FROM meta WHERE key = 'yahoo_live'`)
+          .prepare(`SELECT value FROM meta WHERE key = 'live_price'`)
           .first();
         if (stale?.value) {
           const c = JSON.parse(stale.value);
-          return json({ ...c, stale: true, source: "Yahoo GC=F" });
+          return json({ ...c, stale: true });
         }
       } catch {
         // ignore
@@ -1152,6 +1197,8 @@ async function chatWithAI(request, env) {
 
 Think like an analyst: candles first, then macro news + memory + track record of your own past setups, reason step by step, then conclude. Vary phrasing. OK to stand aside when unclear. Learn from your WON/LOST history — avoid repeating losing patterns.
 
+Start every answer with one line "Trọng tâm: ..." restating what the user is really asking, then answer exactly that focus before any setup.
+
 Rules: never invent market data; separate observation from interpretation; probabilities, never certainty.
 
 Explain each call with theory, in order:
@@ -1171,6 +1218,7 @@ Kiểu: SCALPING | SWING
 Entry: <giá>
 TP: <mục tiêu>
 SL: <cắt lỗ>
+RR: <1:x, tính từ Entry/TP/SL>
 Lệnh chờ: <BUY LIMIT / SELL STOP các mức, hoặc —>
 Scalp: <entry scalping hoặc —>
 Swing: <entry swing giữ >1h hoặc —>
@@ -1178,6 +1226,7 @@ Lý do: <1 câu>
 \`\`\`
 
 Ví dụ câu trả lời đúng:
+Trọng tâm: bạn hỏi xu hướng và điểm vào.
 - Giá **4136.44**, DXY suy yếu sau NFP, 4H vừa BOS lên khỏi 4120.
 
 \`\`\`setup
@@ -1186,6 +1235,7 @@ Kiểu: SWING
 Entry: 4136.44
 TP: 4150.00 / 4165.00
 SL: 4128.00
+RR: 1:2.5
 Lệnh chờ: BUY LIMIT 4132 / 4128 / 4124 / 4120
 Scalp: 4136.44
 Swing: 4132.00 (đáy pullback sau BOS 4H, projection lên 4165)

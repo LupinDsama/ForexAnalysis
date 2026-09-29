@@ -35,10 +35,11 @@ function parseSetup(text) {
     swing: "swing",
     "lệnh chờ": "lệnh chờ",
     "lệnh": "lệnh chờ",
+    rr: "rr",
   };
   for (const line of src.split("\n")) {
     const mm =
-      /^\s*(?:[-*•]\s*)?(?:\d+[.)]\s*)?(?:\*\*)?\s*(xu hướng|entry|điểm vào|vào lệnh|tp\d*|chốt lời|sl|cắt lỗ|lý do|kiểu|scalp|swing|lệnh chờ|lệnh)(?:\*\*)?\s*[:\-–—]\s*(.+?)\s*$/.exec(
+      /^\s*(?:[-*•]\s*)?(?:\d+[.)]\s*)?(?:\*\*)?\s*(xu hướng|entry|điểm vào|vào lệnh|tp\d*|chốt lời|sl|cắt lỗ|lý do|kiểu|scalp|swing|lệnh chờ|lệnh|rr)(?:\*\*)?\s*[:\-–—]\s*(.+?)\s*$/.exec(
         line
       );
     if (mm) {
@@ -76,6 +77,7 @@ function SetupCard({ setup }) {
   const trend = cleanTrend(setup["xu hướng"]);
   const extra = [
     ["Kiểu", setup["kiểu"]],
+    ["RR", setup["rr"]],
     ["Lệnh chờ", setup["lệnh chờ"]],
     ["Scalp", setup["scalp"]],
     ["Swing", setup["swing"]],

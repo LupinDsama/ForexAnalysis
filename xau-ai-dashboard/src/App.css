@@ -355,6 +355,11 @@
   padding: 7px 12px;
 }
 
+.tf-tabs .refresh-one.orders-on {
+  background: var(--accent);
+  color: #fff;
+}
+
 .analysis {
   border-bottom: 1px solid var(--panel-border);
   padding-bottom: 12px;
