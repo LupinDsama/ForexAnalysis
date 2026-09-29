@@ -151,7 +151,7 @@ Panel Bộ nhớ D1 hiện `đã dùng / 5GB`, số dòng từng bảng, 5 mục
 
 | Endpoint | Method | Vào | Ra |
 |---|---|---|---|
-| `/api/xauusd?interval=` | GET | `1min/5min/1h/4h` | JSON Twelve (`values[]`) |
+| `/api/xauusd?interval=` | GET | `1min/5min/15min/1h/4h/1day`, outputsize 500 (intraday) / 365 daily (~1 năm), cùng 1 credit | JSON Twelve (`values[]`) |
 | `/api/chat` | POST | `{prompt, marketData}` | `{candidates:[...], storage}` |
 | `/api/memory` | POST | `{kind: rule/note, content}` | `{ok, storage}` |
 | `/api/storage` | GET | — | `{used_bytes, limit_bytes, tables, recent[10]}` |

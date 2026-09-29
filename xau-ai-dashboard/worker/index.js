@@ -200,14 +200,16 @@ async function storageInfoResponse(env) {
 
 function describeMarket(marketData) {
   // Returns { text, snapshot } where snapshot is a JSON string or null.
+  // Object (multi-TF) payloads are capped for the prompt, not the chart.
   if (Array.isArray(marketData)) {
     const compact = compactCandles(marketData);
     if (!compact.length) return { text: "[]", snapshot: null };
     return { text: JSON.stringify(compact), snapshot: JSON.stringify(compact) };
   }
   if (marketData && typeof marketData === "object") {
-    const text = JSON.stringify(marketData).slice(0, 4000);
-    return { text, snapshot: text };
+    const full = JSON.stringify(marketData);
+    // Full object goes to the snapshot (parseable); prompt gets a cap.
+    return { text: full.slice(0, 12000), snapshot: full.slice(0, 15000) };
   }
   return { text: "[]", snapshot: null };
 }
@@ -273,6 +275,12 @@ async function loadContext(db) {
         block +=
           `[LATEST SAVED SNAPSHOT${label} @${snap.taken_at}] ` +
           `${arr.length} candles, last close ${close}.\n`;
+      } else if (parsed.timeframes) {
+        // Multi-TF snapshot: one line per timeframe.
+        const lines = Object.entries(parsed.timeframes)
+          .map(([k, v]) => `${k}: last ${v?.last ?? "-"} (${v?.count ?? 0})`)
+          .join(", ");
+        block += `[LATEST SAVED SNAPSHOT @${snap.taken_at}] ${lines}.\n`;
       }
     } catch {
       // ignore corrupt snapshot
@@ -795,7 +803,18 @@ async function buildKnowledge(db) {
 
 // ---------- routes ----------
 
-const ALLOWED_INTERVALS = ["1min", "5min", "15min", "1h", "4h"];
+const ALLOWED_INTERVALS = ["1min", "5min", "15min", "1h", "4h", "1day"];
+
+// Longer history costs the same 1 credit per request on Twelve Data,
+// so take full context: 500 intraday candles, 365 daily (~1 year).
+const OUTPUT_SIZES = {
+  "1min": 500,
+  "5min": 500,
+  "15min": 500,
+  "1h": 500,
+  "4h": 500,
+  "1day": 365,
+};
 
 // Twelve values (newest-first, datetime strings) → ascending OHLC for judging.
 function twelveToCandles(values) {
@@ -824,7 +843,7 @@ async function getXAUUSD(env, interval) {
   const apiUrl = new URL("https://api.twelvedata.com/time_series");
   apiUrl.searchParams.set("symbol", "XAU/USD");
   apiUrl.searchParams.set("interval", interval);
-  apiUrl.searchParams.set("outputsize", "200");
+  apiUrl.searchParams.set("outputsize", String(OUTPUT_SIZES[interval] || 200));
   apiUrl.searchParams.set("apikey", env.TWELVE_DATA_API_KEY);
 
   const response = await fetch(apiUrl);

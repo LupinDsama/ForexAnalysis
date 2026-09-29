@@ -28,6 +28,7 @@ const TIMEFRAMES = [
   { key: "15m", label: "15m", interval: "15min", staleMs: 900_000 },
   { key: "1h", label: "1H", interval: "1h", staleMs: 1_200_000 },
   { key: "4h", label: "4H", interval: "4h", staleMs: 2_400_000 },
+  { key: "1D", label: "1D", interval: "1day", staleMs: 43_200_000 },
 ];
 
 // Normal chat: higher TFs only (cheap + stable). Super Boost: all five, deep.
@@ -47,6 +48,7 @@ function App() {
     "15m": [],
     "1h": [],
     "4h": [],
+    "1D": [],
   });
   const [updating, setUpdating] = useState({});
   const [lastFetch, setLastFetch] = useState({});
