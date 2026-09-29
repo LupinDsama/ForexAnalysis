@@ -496,38 +496,32 @@ async function judgeSetups(db, candles) {
   const verdicts = [];
   for (const s of rows.results || []) {
     if (!(s.entry > 0) || !(s.tp > 0) || !(s.sl > 0)) continue;
+    // Range judging for every trend: whichever boundary (TP/SL) the price
+    // touches first after the setup time decides. Same candle hits both
+    // sides → conservative LOST.
     let verdict = null;
     let hitPrice = null;
     let hitTime = null;
     for (const c of candles) {
       if (!(c.time > s.created_ts)) continue;
-      if (s.trend === "LONG") {
-        if (c.low <= s.sl) {
-          verdict = "LOST";
-          hitPrice = c.low;
-          hitTime = c.time;
-          break;
-        }
-        if (c.high >= s.tp) {
-          verdict = "WON";
-          hitPrice = c.high;
-          hitTime = c.time;
-          break;
-        }
-      } else if (s.trend === "SHORT") {
-        if (c.high >= s.sl) {
-          verdict = "LOST";
-          hitPrice = c.high;
-          hitTime = c.time;
-          break;
-        }
-        if (c.low <= s.tp) {
-          verdict = "WON";
-          hitPrice = c.low;
-          hitTime = c.time;
-          break;
-        }
-      } else break;
+      const slHit =
+        (s.sl <= s.entry && c.low <= s.sl) ||
+        (s.sl >= s.entry && c.high >= s.sl);
+      const tpHit =
+        (s.tp >= s.entry && c.high >= s.tp) ||
+        (s.tp <= s.entry && c.low <= s.tp);
+      if (slHit) {
+        verdict = "LOST";
+        hitPrice = s.sl;
+        hitTime = c.time;
+        break;
+      }
+      if (tpHit) {
+        verdict = "WON";
+        hitPrice = s.tp;
+        hitTime = c.time;
+        break;
+      }
     }
     if (!verdict) continue;
     const note =

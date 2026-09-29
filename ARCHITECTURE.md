@@ -106,7 +106,8 @@ User hỏi (+ boost?)
   │  2. Fetch tươi các khung (thường: khung cũ trong 5m/1h/4h · boost: cả 5)
   ▼
 POST /api/chat { prompt, marketData, boost }
-  │  3. Chấm backtest: setup OPEN cũ so với nến mới → WON/LOST + bài học
+  │  3. Chấm backtest: setup OPEN cũ so với nến mới → chạm TP trước THẮNG,
+  │     chạm SL trước THUA (mọi trend tính theo biên, cùng nến tính THUA),
   │     + điểm pattern (thắng +1, thua -1). Mỗi request /api/xauusd cũng chấm.
   │  4. Nạp context D1: điểm pattern + track record + 15 memories + snapshot + macro
   │  5. Lưu snapshot nến hiện tại
