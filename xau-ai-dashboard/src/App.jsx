@@ -14,6 +14,7 @@ import {
   getStorage,
   getNews,
   saveMemory,
+  cleanStorage,
 } from "./services/api";
 import "./App.css";
 
@@ -240,6 +241,12 @@ function App() {
     }
   }
 
+  async function handleCleanStorage(password) {
+    const result = await cleanStorage(password);
+    if (result?.storage) setStorage(result.storage);
+    return result;
+  }
+
   const activeTFConf = TIMEFRAMES.find((t) => t.key === activeTF);
   const activeData = data[activeTF] || [];
 
@@ -343,7 +350,7 @@ function App() {
             onToggleBoost={() => setBoost((b) => !b)}
             onSend={handleAskAI}
           />
-          <Memory storage={storage} onSave={handleSaveMemory} />
+          <Memory storage={storage} onSave={handleSaveMemory} onClean={handleCleanStorage} />
         </aside>
       </main>
 

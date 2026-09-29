@@ -49,6 +49,10 @@ export default {
       return storageInfoResponse(env);
     }
 
+    if (url.pathname === "/api/storage/clean" && request.method === "POST") {
+      return storageClean(request, env);
+    }
+
     if (url.pathname === "/api/news") {
       if (!env.DB) return json({ error: "Missing DB binding" }, 500);
       await ensureSchema(env.DB);
@@ -557,6 +561,106 @@ async function trackRecord(db) {
         .slice(0, 800);
   }
   return s.slice(0, 1200);
+}
+
+// Casual gate against accidental taps — NOT real security: this constant
+// ships in the public repo and bundle, so anyone can read it.
+const CLEAN_PASSWORD = "anhnhandeptrai";
+
+async function storageClean(request, env) {
+  try {
+    if (!env.DB) return json({ error: "Missing DB binding" }, 500);
+    const body = await request.json();
+    if (body.password !== CLEAN_PASSWORD) {
+      return json({ error: "Sai mật khẩu" }, 403);
+    }
+    await ensureSchema(env.DB);
+    const db = env.DB;
+    const before = await storageInfo(db);
+
+    // 1. Snapshots: delete older than 7 days, always keep newest 10.
+    const snapDel = await db
+      .prepare(
+        `DELETE FROM snapshots WHERE taken_at < datetime('now', '-7 days')
+         AND id NOT IN (SELECT id FROM snapshots ORDER BY id DESC LIMIT 10)`
+      )
+      .run();
+    const snapshotsDeleted = snapDel.meta?.changes || 0;
+
+    // 2. Compress: snapshots older than 3 days keep only last 50 candles.
+    let snapshotsTrimmed = 0;
+    const trimmable = await db
+      .prepare(
+        `SELECT id, data FROM snapshots
+         WHERE taken_at < datetime('now', '-3 days')`
+      )
+      .all();
+    for (const r of trimmable.results || []) {
+      try {
+        const arr = JSON.parse(r.data);
+        if (Array.isArray(arr) && arr.length > 50) {
+          const cut = JSON.stringify(arr.slice(-50));
+          await db
+            .prepare(`UPDATE snapshots SET data = ? WHERE id = ?`)
+            .bind(cut, r.id)
+            .run();
+          snapshotsTrimmed++;
+        }
+      } catch {
+        // object-form snapshots are left alone
+      }
+    }
+
+    // 3. Memories: keep all lessons/rules/notes; analyses keep newest 100.
+    const memDel = await db
+      .prepare(
+        `DELETE FROM memories WHERE kind = 'analysis'
+         AND id NOT IN (
+           SELECT id FROM memories WHERE kind = 'analysis'
+           ORDER BY id DESC LIMIT 100
+         )`
+      )
+      .run();
+
+    // 4. Setups: judged older than 30 days go.
+    const stDel = await db
+      .prepare(
+        `DELETE FROM setups WHERE status != 'OPEN'
+         AND judged_at < datetime('now', '-30 days')`
+      )
+      .run();
+
+    // 5. Recompute usage from actual rows (estimate).
+    const sizes = await db
+      .prepare(
+        `SELECT
+           (SELECT COALESCE(SUM(LENGTH(content)), 0) FROM memories) +
+           (SELECT COALESCE(SUM(LENGTH(data)), 0) FROM snapshots) +
+           (SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM news_cache)
+           AS total`
+      )
+      .first();
+    await db
+      .prepare(`UPDATE meta SET value = ? WHERE key = 'usage_bytes'`)
+      .bind(String(sizes?.total || 0))
+      .run();
+
+    const after = await storageInfo(db);
+    return json({
+      ok: true,
+      stats: {
+        memories_deleted: memDel.meta?.changes || 0,
+        snapshots_deleted: snapshotsDeleted,
+        snapshots_trimmed: snapshotsTrimmed,
+        setups_deleted: stDel.meta?.changes || 0,
+        bytes_before: before.used_bytes,
+        bytes_after: after.used_bytes,
+      },
+      storage: after,
+    });
+  } catch (error) {
+    return json({ error: error.message }, 500);
+  }
 }
 
 async function pruneMemories(db) {

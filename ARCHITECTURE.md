@@ -151,6 +151,7 @@ Panel Bộ nhớ D1 hiện `đã dùng / 5GB`, số dòng từng bảng, 5 mục
 | `/api/chat` | POST | `{prompt, marketData}` | `{candidates:[...], storage}` |
 | `/api/memory` | POST | `{kind: rule/note, content}` | `{ok, storage}` |
 | `/api/storage` | GET | — | `{used_bytes, limit_bytes, tables, recent[10]}` |
+| `/api/storage/clean` | POST | `{password}` — cổng chống bấm nhầm (KHÔNG phải bảo mật thật, key nằm public) | `{ok, stats, storage}` — xóa snapshot >7 ngày (giữ 10 mới nhất), nén snapshot >3 ngày còn 50 nến cuối, analyses giữ 100 mới nhất (giữ hết lesson/rule/note), setups đã chấm >30 ngày; recompute usage |
 | `/api/news[?refresh=1]` | GET | — | `{events[≤15], headlines[≤8], updated_at}` |
 | `/api/whereami` | GET | — | debug egress (trace Cloudflare) |
 

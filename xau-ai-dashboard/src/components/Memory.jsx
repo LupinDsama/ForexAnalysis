@@ -12,10 +12,15 @@ function formatBytes(n) {
   return `${v.toFixed(v < 10 && u > 0 ? 1 : 0)} ${units[u]}`;
 }
 
-export default function Memory({ storage, onSave }) {
+export default function Memory({ storage, onSave, onClean }) {
   const [kind, setKind] = useState("rule");
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showGate, setShowGate] = useState(false);
+  const [password, setPassword] = useState("");
+  const [gateError, setGateError] = useState("");
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState(null);
 
   const used = storage?.used_bytes || 0;
   const limit = storage?.limit_bytes || 1;
@@ -32,6 +37,22 @@ export default function Memory({ storage, onSave }) {
       setText("");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleClean() {
+    if (cleaning) return;
+    setCleaning(true);
+    setGateError("");
+    try {
+      const res = await onClean(password);
+      setCleanResult(res.stats || null);
+      setShowGate(false);
+      setPassword("");
+    } catch (e) {
+      setGateError(e.message);
+    } finally {
+      setCleaning(false);
     }
   }
 
@@ -61,6 +82,54 @@ export default function Memory({ storage, onSave }) {
         Chỉ lưu điều quan trọng: setup có Entry/TP/SL, bài học [phân tích],
         quy tắc tay. Chat xã giao không lưu.
       </p>
+
+      <button className="clean-btn" onClick={() => { setShowGate(true); setCleanResult(null); }}>
+        Lọc và dọn kho
+      </button>
+
+      {cleanResult && (
+        <p className="muted">
+          Đã dọn: {cleanResult.memories_deleted} phân tích cũ,{" "}
+          {cleanResult.snapshots_deleted} snapshot cũ,{" "}
+          {cleanResult.snapshots_trimmed} snapshot nén gọn,{" "}
+          {cleanResult.setups_deleted} setup cũ. Dung lượng{" "}
+          {formatBytes(cleanResult.bytes_before)} còn{" "}
+          {formatBytes(cleanResult.bytes_after)}.
+        </p>
+      )}
+
+      {showGate && (
+        <div className="gate-overlay" onClick={() => setShowGate(false)}>
+          <div className="gate-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>Xác nhận dọn kho</h3>
+            <p className="muted">
+              Nhập mật khẩu để nén và xóa dữ liệu không quan trọng. Bài học,
+              quy tắc và setup đang mở được giữ lại.
+            </p>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleClean();
+              }}
+              placeholder="Mật khẩu"
+              autoFocus
+            />
+            {gateError && <p className="gate-error">{gateError}</p>}
+            <div className="gate-actions">
+              <button onClick={() => setShowGate(false)}>Hủy</button>
+              <button
+                className="danger"
+                onClick={handleClean}
+                disabled={cleaning || !password}
+              >
+                {cleaning ? "Đang dọn..." : "Bắt đầu dọn"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="memory-form">
         <select value={kind} onChange={(e) => setKind(e.target.value)}>
