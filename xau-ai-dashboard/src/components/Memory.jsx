@@ -103,8 +103,9 @@ export default function Memory({ storage, onSave, onClean }) {
           <div className="gate-dialog" onClick={(e) => e.stopPropagation()}>
             <h3>Xác nhận dọn kho</h3>
             <p className="muted">
-              Nhập mật khẩu để nén và xóa dữ liệu không quan trọng. Bài học,
-              quy tắc và setup đang mở được giữ lại.
+              Nhập mật khẩu để nén thành tri thức và xóa dữ liệu không quan
+              trọng. Quy tắc, ghi chú, bài học và setup đang mở không bao
+              giờ bị xóa.
             </p>
             <input
               type="password"

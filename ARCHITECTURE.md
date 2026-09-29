@@ -135,7 +135,7 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 
 | Bảng | Nội dung |
 |---|---|
-| `memories` | `analysis` (setup đủ số, gọn), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay) — giữ tối đa 500 |
+| `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
 | `setups` | setup số học được từ mỗi câu trả lời (trend/style/entry/tp/sl, status OPEN→WON/LOST) — chấm tự động bằng nến mới |
 | `snapshots` | nến gọn `[[t,o,h,l,c],...]` mỗi lần chat |
 | `news_cache` | payload tin vĩ mô + `updated_at` |

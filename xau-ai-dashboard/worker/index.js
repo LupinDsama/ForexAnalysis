@@ -221,6 +221,7 @@ async function loadContext(db) {
   const rows = await db
     .prepare(
       `SELECT kind, content, created_at FROM memories
+       WHERE kind != 'knowledge'
        ORDER BY id DESC LIMIT 15`
     )
     .all();
@@ -228,8 +229,17 @@ async function loadContext(db) {
   const snap = await db
     .prepare(`SELECT data, taken_at FROM snapshots ORDER BY id DESC LIMIT 1`)
     .first();
+  const know = await db
+    .prepare(
+      `SELECT content FROM memories WHERE kind = 'knowledge'
+       ORDER BY id DESC LIMIT 1`
+    )
+    .first();
 
   let block = "";
+  if (know?.content) {
+    block += know.content + "\n";
+  }
   if (mems.length) {
     block +=
       "[LONG-TERM MEMORY — rules, notes and past analyses, oldest first]\n" +
@@ -576,6 +586,9 @@ async function storageClean(request, env) {
     }
     await ensureSchema(env.DB);
     const db = env.DB;
+    // Compress first: fold everything into the knowledge digest,
+    // then delete. Rules, notes and lessons are never deleted.
+    await buildKnowledge(db);
     const before = await storageInfo(db);
 
     // 1. Snapshots: delete older than 7 days, always keep newest 10.
@@ -664,15 +677,77 @@ async function storageClean(request, env) {
 }
 
 async function pruneMemories(db) {
+  // Only analyses are pruned. Rules, notes, lessons and knowledge
+  // are never auto-deleted.
   const row = await db
-    .prepare(`SELECT COUNT(*) AS c, MAX(id) AS m FROM memories`)
+    .prepare(
+      `SELECT COUNT(*) AS c, MAX(id) AS m FROM memories WHERE kind = 'analysis'`
+    )
     .first();
   if (row && row.c > MAX_MEMORIES + 50) {
     await db
-      .prepare(`DELETE FROM memories WHERE id <= ?`)
+      .prepare(
+        `DELETE FROM memories WHERE kind = 'analysis' AND id <= ?`
+      )
       .bind(row.m - MAX_MEMORIES)
       .run();
   }
+}
+
+// Fold stats + recent lessons into ONE 'knowledge' row: the compressed
+// base for future analysis. Called before deletions so nothing is lost.
+async function buildKnowledge(db) {
+  const rows = await db
+    .prepare(
+      `SELECT trend, style, status, COUNT(*) AS c FROM setups
+       GROUP BY trend, style, status`
+    )
+    .all();
+  const counters = await db
+    .prepare(
+      `SELECT kind, COUNT(*) AS c FROM memories
+       WHERE kind IN ('rule', 'note', 'lesson') GROUP BY kind`
+    )
+    .all();
+  const lessons = await db
+    .prepare(
+      `SELECT substr(content, 1, 200) AS s FROM memories
+       WHERE kind = 'lesson' ORDER BY id DESC LIMIT 3`
+    )
+    .all();
+  const parts = [];
+  const tally = {};
+  for (const r of rows.results || []) {
+    tally[`${r.style} ${r.trend} ${r.status}`] = r.c;
+  }
+  const t = (k) => tally[k] || 0;
+  const lw = t("SCALPING LONG WON") + t("SWING LONG WON");
+  const ll = t("SCALPING LONG LOST") + t("SWING LONG LOST");
+  const sw = t("SCALPING SHORT WON") + t("SWING SHORT WON");
+  const sl = t("SCALPING SHORT LOST") + t("SWING SHORT LOST");
+  parts.push(
+    `CƠ SỞ TRI THỨC — setup đã chấm: LONG ${lw} thắng/${ll} thua, ` +
+      `SHORT ${sw} thắng/${sl} thua.`
+  );
+  const counts = {};
+  for (const r of counters.results || []) counts[r.kind] = r.c;
+  parts.push(
+    `Đã lưu: ${counts.rule || 0} quy tắc, ${counts.note || 0} ghi chú, ` +
+      `${counts.lesson || 0} bài học.`
+  );
+  if (lessons.results?.length) {
+    parts.push(
+      "Bài học gần nhất:\n" +
+        lessons.results.map((r) => `- ${r.s}`).join("\n")
+    );
+  }
+  const digest = parts.join("\n").slice(0, 1500);
+  await db.prepare(`DELETE FROM memories WHERE kind = 'knowledge'`).run();
+  await db
+    .prepare(`INSERT INTO memories(kind, content) VALUES('knowledge', ?)`)
+    .bind(digest)
+    .run();
+  await addUsage(db, byteLen(digest));
 }
 
 // ---------- routes ----------
@@ -755,8 +830,10 @@ async function chatWithAI(request, env) {
         macro = "";
       }
       // Backtest: judge open setups against the finest fresh candles.
+      // New verdicts refresh the knowledge digest immediately.
       try {
-        await judgeSetups(env.DB, judgeCandles(marketData));
+        const verdicts = await judgeSetups(env.DB, judgeCandles(marketData));
+        if (verdicts.length) await buildKnowledge(env.DB);
       } catch {
         // judging never blocks the chat
       }
