@@ -49,12 +49,17 @@ export default {
       return storageInfoResponse(env);
     }
 
+    // Live gold price proxy (Yahoo COMEX futures, no key needed).
+    // Cached 30s server-side; browsers can't call Yahoo directly (no CORS).
+    if (url.pathname === "/api/live") {
+      return livePrice(env);
+    }
+
     if (url.pathname === "/api/storage/clean" && request.method === "POST") {
       return storageClean(request, env);
     }
 
-    if (url.pathname === "/api/news") {
-      if (!env.DB) return json({ error: "Missing DB binding" }, 500);
+    if (url.pathname === "/api/news") {      if (!env.DB) return json({ error: "Missing DB binding" }, 500);
       await ensureSchema(env.DB);
       if (url.searchParams.get("refresh") === "1") {
         try {
@@ -203,6 +208,75 @@ async function storageInfoResponse(env) {
   if (!env.DB) return json({ error: "Missing DB binding" }, 500);
   await ensureSchema(env.DB);
   return json(await storageInfo(env.DB));
+}
+
+const LIVE_TTL_MS = 30_000;
+const YAHOO_URL =
+  "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1m&range=1d";
+
+async function livePrice(env) {
+  const nowMs = Date.now();
+  if (env.DB) {
+    try {
+      await ensureSchema(env.DB);
+      const cached = await env.DB
+        .prepare(`SELECT value FROM meta WHERE key = 'yahoo_live'`)
+        .first();
+      if (cached?.value) {
+        const c = JSON.parse(cached.value);
+        // TTL on our fetch time: Yahoo market time itself can lag minutes.
+        if (c.price && nowMs - (c.fetchedAt || 0) < LIVE_TTL_MS) {
+          return json({
+            price: c.price,
+            time: c.time,
+            cached: true,
+            source: "Yahoo GC=F",
+          });
+        }
+      }
+    } catch {
+      // fall through to live fetch
+    }
+  }
+  try {
+    const r = await fetch(YAHOO_URL, {
+      headers: { "User-Agent": "Mozilla/5.0 XAUUSD-Dashboard/1.0" },
+    });
+    if (!r.ok) throw new Error("Yahoo HTTP " + r.status);
+    const j = await r.json();
+    const meta = j?.chart?.result?.[0]?.meta || {};
+    const price = Number(meta.regularMarketPrice);
+    const time = Number(meta.regularMarketTime) * 1000 || nowMs;
+    if (!Number.isFinite(price)) throw new Error("Yahoo bad price");
+    const out = { price, time, source: "Yahoo GC=F" };
+    if (env.DB) {
+      try {
+        await env.DB.prepare(
+          `INSERT OR REPLACE INTO meta(key, value) VALUES('yahoo_live', ?)`
+        )
+          .bind(JSON.stringify({ price, time, fetchedAt: nowMs }))
+          .run();
+      } catch {
+        // cache is best-effort
+      }
+    }
+    return json(out);
+  } catch (error) {
+    if (env.DB) {
+      try {
+        const stale = await env.DB
+          .prepare(`SELECT value FROM meta WHERE key = 'yahoo_live'`)
+          .first();
+        if (stale?.value) {
+          const c = JSON.parse(stale.value);
+          return json({ ...c, stale: true, source: "Yahoo GC=F" });
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return json({ error: error.message }, 502);
+  }
 }
 
 function describeMarket(marketData) {
@@ -554,11 +628,18 @@ function extractSetup(text) {
   const sl = parseNum(get("sl", "cắt lỗ"));
   if (entry == null || tp == null || sl == null) return null;
   const t = get("xu hướng").toUpperCase();
-  const trend = /GIẢM|DOWN|SHORT|SELL/.test(t)
+  let trend = /GIẢM|DOWN|SHORT|SELL/.test(t)
     ? "SHORT"
     : /TĂNG|UP|LONG|BUY/.test(t)
       ? "LONG"
       : "SIDEWAYS";
+  // Sanitize: numbers decide when the label contradicts them.
+  // LONG needs TP above entry and SL below; SHORT the reverse.
+  // (E.g. LONG with TP below entry is really a SHORT.)
+  const longOk = tp > entry && sl < entry;
+  const shortOk = tp < entry && sl > entry;
+  if (trend === "LONG" && !longOk) trend = shortOk ? "SHORT" : "SIDEWAYS";
+  else if (trend === "SHORT" && !shortOk) trend = longOk ? "LONG" : "SIDEWAYS";
   const style = /SWING/.test(get("kiểu").toUpperCase()) ? "SWING" : "SCALPING";
   return {
     trend,
@@ -1075,6 +1156,8 @@ Explain each call with theory, in order:
 3. Kỹ thuật: nêu phương pháp (BOS/CHoCH, liquidity, S/R...).
 
 Always give a SCALP entry. Give a SWING entry (hold >1h) ONLY when the entry is beautiful: likely a peak or bottom backed by trend projection (4H/1D structure, strong support/resistance, projected future path). If no swing-quality entry exists, write "Swing: — (chờ ...)" naming exactly what you are waiting for. Suggest pending orders (BUY LIMIT / SELL STOP) with 3–10+ price levels across scenarios.
+
+Direction check before answering: for TĂNG/LONG, TP must be ABOVE entry and SL BELOW entry; for GIẢM/SHORT, TP BELOW entry and SL ABOVE entry. Never output a LONG with TP below entry.
 
 You MUST end every answer with this exact block. ONE trend value. Fill every line (use "—" only if truly unknown):
 

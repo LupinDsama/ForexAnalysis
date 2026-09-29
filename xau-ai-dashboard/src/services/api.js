@@ -73,8 +73,16 @@ export async function saveMemory(kind, content) {
   return response.json();
 }
 
-export async function cleanStorage(password) {
-  const response = await fetch(`${API_URL}/api/storage/clean`, {
+export async function getLive() {
+  const response = await fetch(`${API_URL}/api/live`);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "Live feed failed");
+  }
+  return data;
+}
+
+export async function cleanStorage(password) {  const response = await fetch(`${API_URL}/api/storage/clean`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),

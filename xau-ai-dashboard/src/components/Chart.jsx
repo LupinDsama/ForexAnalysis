@@ -32,6 +32,15 @@ const Chart = forwardRef(function Chart({ data, theme = "dark" }, ref) {
         return null;
       }
     },
+    updateLive(candle) {
+      try {
+        if (seriesRef.current && candle && Number.isFinite(candle.time)) {
+          seriesRef.current.update(candle);
+        }
+      } catch {
+        // stale/out-of-order ticks are ignored
+      }
+    },
   }));
 
   useEffect(() => {

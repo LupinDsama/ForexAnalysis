@@ -14,6 +14,7 @@ import {
   incRequestCount,
   getStorage,
   getNews,
+  getLive,
   saveMemory,
   cleanStorage,
 } from "./services/api";
@@ -32,8 +33,11 @@ const TIMEFRAMES = [
   { key: "1D", label: "1D", interval: "1day", staleMs: 43_200_000 },
 ];
 
-// Normal chat: higher TFs only (cheap + stable). Super Boost: all five, deep.
+// Normal chat: higher TFs only (cheap + stable). Super Boost: all six, deep.
 const NORMAL_TFS = ["5m", "1h", "4h"];
+
+// Candle length in seconds per timeframe, for live tick aggregation.
+const TF_BOUNDS = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1D": 86400 };
 
 function formatTime(ts) {
   if (!ts) return "-";
@@ -62,6 +66,9 @@ function App() {
   const [storage, setStorage] = useState(null);
   const [news, setNews] = useState(null);
   const [boost, setBoost] = useState(false);
+  const [liveOn, setLiveOn] = useState(true);
+  const [liveStatus, setLiveStatus] = useState("off");
+  const [liveTick, setLiveTick] = useState(null);
   const [theme, setTheme] = useState(() => {
     try {
       const saved = localStorage.getItem("xau_theme");
@@ -87,6 +94,9 @@ function App() {
   });
   const chartRef = useRef(null);
   const BUILD_ID = import.meta.env.VITE_BUILD_ID || "dev";
+  // Forming live candle per TF + last Twelve history candle (seed/guard).
+  const liveRef = useRef({});
+  const lastHistRef = useRef({});
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -146,6 +156,12 @@ function App() {
       const candles = convertCandles(res.values);
       setData((d) => ({ ...d, [tf.key]: candles }));
       setLastFetch((t) => ({ ...t, [tf.key]: Date.now() }));
+      if (candles.length) {
+        const last = candles[candles.length - 1];
+        lastHistRef.current[tf.key] = { time: last.time, close: last.close };
+        // Fresh history replaces any forming live candle.
+        delete liveRef.current[tf.key];
+      }
       setError("");
       return candles;
     } catch (e) {
@@ -160,6 +176,82 @@ function App() {
   useEffect(() => {
     loadTF(TIMEFRAMES[0]);
   }, [loadTF]);
+
+  // Live ticks (Yahoo COMEX via Worker, free, no Twelve quota).
+  // Ticks fold into a forming candle per timeframe; the visible chart
+  // updates in place. Twelve history still seeds every timeframe.
+  useEffect(() => {
+    if (!liveOn) {
+      setLiveStatus("off");
+      return;
+    }
+    let stop = false;
+    setLiveStatus("connecting");
+
+    function onTick(price, timeMs) {
+      if (stop || !Number.isFinite(price)) return;
+      const tickSec = Math.floor((timeMs || Date.now()) / 1000);
+      setLiveTick({ price, time: timeMs || Date.now() });
+      for (const tf of TIMEFRAMES) {
+        const bound = TF_BOUNDS[tf.key];
+        if (!bound) continue;
+        const start = Math.floor(tickSec / bound) * bound;
+        const cur = liveRef.current[tf.key];
+        if (!cur || tickSec >= cur.start + bound) {
+          const seed =
+            cur?.close ??
+            lastHistRef.current[tf.key]?.close ??
+            price;
+          liveRef.current[tf.key] = {
+            start,
+            time: start,
+            open: seed,
+            high: Math.max(seed, price),
+            low: Math.min(seed, price),
+            close: price,
+          };
+        } else {
+          cur.high = Math.max(cur.high, price);
+          cur.low = Math.min(cur.low, price);
+          cur.close = price;
+        }
+        if (tf.key === activeTF && chartVisible) {
+          const live = liveRef.current[tf.key];
+          const histT = lastHistRef.current[tf.key]?.time || 0;
+          if (live.time >= histT) {
+            chartRef.current?.updateLive?.({
+              time: live.time,
+              open: live.open,
+              high: live.high,
+              low: live.low,
+              close: live.close,
+            });
+          }
+        }
+      }
+    }
+
+    async function poll() {
+      if (stop) return;
+      try {
+        const r = await getLive();
+        if (!stop && Number.isFinite(r.price)) {
+          setLiveStatus("live");
+          onTick(r.price, r.time);
+        }
+      } catch {
+        if (!stop) setLiveStatus("error");
+      }
+    }
+
+    poll();
+    const timer = setInterval(poll, 30_000);
+    return () => {
+      stop = true;
+      clearInterval(timer);
+      setLiveStatus("off");
+    };
+  }, [liveOn, activeTF, chartVisible]);
 
   function handleSwitchTF(key) {
     setActiveTF(key);
@@ -328,10 +420,31 @@ function App() {
           ) : (
             <div className="chart-hidden">Chart hidden</div>
           )}
-          <div className="status">
-            {updating[activeTF]
-              ? "Đang tải..."
-              : `Cập nhật lúc ${formatTime(lastFetch[activeTF])} (${activeTFConf.label}) · on-demand`}
+          <div className="status status-row">
+            <span>
+              {updating[activeTF]
+                ? "Đang tải..."
+                : `Cập nhật lúc ${formatTime(lastFetch[activeTF])} (${activeTFConf.label}) · on-demand`}
+            </span>
+            <span className="live-wrap">
+              {liveStatus === "live" && liveTick ? (
+                <span className="live-on">
+                  ● LIVE {liveTick.price} Yahoo
+                  {Date.now() - liveTick.time > 600_000 ? " (giá cũ)" : ""}
+                </span>
+              ) : liveStatus === "connecting" ? (
+                <span className="muted">Đang nối live...</span>
+              ) : liveStatus === "error" ? (
+                <span className="muted">Live lỗi, dùng dữ liệu Twelve</span>
+              ) : null}
+              <button
+                className={liveOn ? "live-toggle on" : "live-toggle"}
+                onClick={() => setLiveOn((v) => !v)}
+                title="Bật/tắt giá live (Yahoo COMEX, không tốn quota)"
+              >
+                Live {liveOn ? "ON" : "OFF"}
+              </button>
+            </span>
           </div>
         </section>
 
