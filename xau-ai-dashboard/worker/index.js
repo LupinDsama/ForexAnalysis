@@ -133,6 +133,15 @@ async function ensureSchema(db) {
       )`
     ),
     db.prepare(
+      `CREATE TABLE IF NOT EXISTS scores (
+        pattern TEXT PRIMARY KEY,
+        score INTEGER NOT NULL DEFAULT 0,
+        won INTEGER NOT NULL DEFAULT 0,
+        lost INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    ),
+    db.prepare(
       `INSERT OR IGNORE INTO meta(key, value) VALUES('usage_bytes', '0')`
     ),
   ]);
@@ -166,6 +175,9 @@ async function storageInfo(db) {
     .all();
   const setups = { OPEN: 0, WON: 0, LOST: 0 };
   for (const r of st.results || []) setups[r.status] = r.c;
+  const sc = await db
+    .prepare(`SELECT pattern, score, won, lost FROM scores ORDER BY score DESC`)
+    .all();
   const used = Number(usage?.value || 0);
   return {
     used_bytes: used,
@@ -175,6 +187,7 @@ async function storageInfo(db) {
       snapshots: snap?.c || 0,
       setups,
     },
+    scores: sc.results || [],
     recent: recent.results || [],
   };
 }
@@ -524,11 +537,36 @@ async function judgeSetups(db, candles) {
       .prepare(`UPDATE setups SET status = ?, judged_at = datetime('now'), note = ? WHERE id = ?`)
       .bind(verdict, note, s.id)
       .run();
+    // Score the pattern: WON +1, LOST -1. Relearn signal for future analysis.
+    const pattern = `${s.style} ${s.trend}`;
+    const delta = verdict === "WON" ? 1 : -1;
+    await db
+      .prepare(
+        `INSERT INTO scores(pattern, score, won, lost, updated_at)
+         VALUES(?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(pattern) DO UPDATE SET
+           score = score + ?,
+           won = won + ?,
+           lost = lost + ?,
+           updated_at = datetime('now')`
+      )
+      .bind(
+        pattern,
+        delta,
+        verdict === "WON" ? 1 : 0,
+        verdict === "LOST" ? 1 : 0,
+        delta,
+        verdict === "WON" ? 1 : 0,
+        verdict === "LOST" ? 1 : 0
+      )
+      .run();
+    const sc = await db
+      .prepare(`SELECT score, won, lost FROM scores WHERE pattern = ?`)
+      .bind(pattern)
+      .first();
     const lesson =
-      `Bài học #${s.id} (${s.style} ${s.trend} entry ${s.entry} TP ${s.tp} SL ${s.sl}): ${note}.`.slice(
-        0,
-        600
-      );
+      `Bài học #${s.id} (${pattern} entry ${s.entry} TP ${s.tp} SL ${s.sl}): ${note} ` +
+      `(điểm ${pattern}: ${sc?.score ?? delta}).`.slice(0, 600);
     await db
       .prepare(`INSERT INTO memories(kind, content) VALUES('lesson', ?)`)
       .bind(lesson)
@@ -570,7 +608,18 @@ async function trackRecord(db) {
         .join("\n")
         .slice(0, 800);
   }
-  return s.slice(0, 1200);
+  const scores = await db
+    .prepare(`SELECT pattern, score, won, lost FROM scores ORDER BY score DESC`)
+    .all();
+  if (scores.results?.length) {
+    s +=
+      "\nĐIỂM PATTERN (thắng +1, thua -1 — ưu tiên điểm cao, học lại từ điểm âm):\n" +
+      scores.results
+        .map((r) => `- ${r.pattern}: ${r.score} (${r.won}W/${r.lost}L)`)
+        .join("\n")
+        .slice(0, 600);
+  }
+  return s.slice(0, 1600);
 }
 
 // Casual gate against accidental taps — NOT real security: this constant
@@ -754,6 +803,22 @@ async function buildKnowledge(db) {
 
 const ALLOWED_INTERVALS = ["1min", "5min", "15min", "1h", "4h"];
 
+// Twelve values (newest-first, datetime strings) → ascending OHLC for judging.
+function twelveToCandles(values) {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((v) => ({
+      time: Math.floor(new Date(v.datetime).getTime() / 1000),
+      high: Number(v.high),
+      low: Number(v.low),
+      close: Number(v.close),
+    }))
+    .filter(
+      (c) => Number.isFinite(c.time) && Number.isFinite(c.high) && Number.isFinite(c.low)
+    )
+    .sort((a, b) => a.time - b.time);
+}
+
 async function getXAUUSD(env, interval) {
   if (!env.TWELVE_DATA_API_KEY) {
     return json({ error: "Missing TWELVE_DATA_API_KEY secret" }, 500);
@@ -778,6 +843,18 @@ async function getXAUUSD(env, interval) {
 
   if (data.status === "error") {
     return json(data, 400);
+  }
+
+  // Judge open setups on every market fetch (not only on chat):
+  // entry/TP/SL were noted with timestamps when the AI answered.
+  if (env.DB) {
+    try {
+      await ensureSchema(env.DB);
+      const verdicts = await judgeSetups(env.DB, twelveToCandles(data.values));
+      if (verdicts.length) await buildKnowledge(env.DB);
+    } catch {
+      // judging never blocks market data
+    }
   }
 
   return json(data);

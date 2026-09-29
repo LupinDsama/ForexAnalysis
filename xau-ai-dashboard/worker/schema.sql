@@ -30,3 +30,11 @@ CREATE TABLE IF NOT EXISTS setups (
   judged_at TEXT,
   note TEXT
 );
+
+CREATE TABLE IF NOT EXISTS scores (
+  pattern TEXT PRIMARY KEY,
+  score INTEGER NOT NULL DEFAULT 0,
+  won INTEGER NOT NULL DEFAULT 0,
+  lost INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

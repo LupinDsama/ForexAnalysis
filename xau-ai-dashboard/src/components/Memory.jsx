@@ -28,6 +28,7 @@ export default function Memory({ storage, onSave, onClean }) {
   const tables = storage?.tables || {};
   const recent = storage?.recent || [];
   const setups = tables.setups || {};
+  const scores = storage?.scores || [];
 
   async function handleSave() {
     if (!text.trim() || saving) return;
@@ -78,6 +79,12 @@ export default function Memory({ storage, onSave, onClean }) {
         Setup: {setups.OPEN ?? 0} mở, {setups.WON ?? 0} thắng,{" "}
         {setups.LOST ?? 0} thua
       </p>
+      {scores.length > 0 && (
+        <p className="muted">
+          Điểm pattern:{" "}
+          {scores.map((s) => `${s.pattern} ${s.score >= 0 ? "+" : ""}${s.score}`).join(" · ")}
+        </p>
+      )}
       <p className="muted">
         Chỉ lưu điều quan trọng: setup có Entry/TP/SL, bài học [phân tích],
         quy tắc tay. Chat xã giao không lưu.

@@ -106,11 +106,13 @@ User hỏi (+ boost?)
   │  2. Fetch tươi các khung (thường: khung cũ trong 5m/1h/4h · boost: cả 5)
   ▼
 POST /api/chat { prompt, marketData, boost }
-  │  3. Chấm backtest: setup OPEN cũ so với nến 1m mới → WON/LOST + bài học
-  │  4. Nạp context D1: track record + 15 memories + snapshot + macro
+  │  3. Chấm backtest: setup OPEN cũ so với nến mới → WON/LOST + bài học
+  │     + điểm pattern (thắng +1, thua -1). Mỗi request /api/xauusd cũng chấm.
+  │  4. Nạp context D1: điểm pattern + track record + 15 memories + snapshot + macro
   │  5. Lưu snapshot nến hiện tại
   │  6. Gọi Workers AI (Qwen3-30B)
-  │  7. Lưu chọn lọc: setup số học được → bảng setups (OPEN);
+  │  7. Lưu chọn lọc: setup số học được → bảng setups (OPEN, kèm created_ts
+  │     là thời điểm AI trả lời để lần fetch sau đối chiếu chạm TP/SL trước);
   │     prompt có [phân tích] → lesson full; setup đủ số → analysis gọn;
   │     chat xã giao → không lưu gì
   ▼
@@ -136,7 +138,8 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 | Bảng | Nội dung |
 |---|---|
 | `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
-| `setups` | setup số học được từ mỗi câu trả lời (trend/style/entry/tp/sl, status OPEN→WON/LOST) — chấm tự động bằng nến mới |
+| `setups` | setup số học được từ mỗi câu trả lời (trend/style/entry/tp/sl + `created_ts` ghi thời điểm AI trả lời, status OPEN→WON/LOST) — chấm tự động bằng nến mới |
+| `scores` | điểm từng pattern (`SCALPING LONG`...): thắng +1, thua -1, kèm won/lost — nạp vào prompt để AI ưu tiên pattern điểm cao, học lại từ điểm âm |
 | `snapshots` | nến gọn `[[t,o,h,l,c],...]` mỗi lần chat |
 | `news_cache` | payload tin vĩ mô + `updated_at` |
 | `meta` | `usage_bytes` — byte tích lũy để hiển thị (ước tính, không trừ khi tỉa) |
