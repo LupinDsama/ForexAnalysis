@@ -539,9 +539,10 @@ async function judgeSetups(db, candles) {
       .prepare(`UPDATE setups SET status = ?, judged_at = datetime('now'), note = ? WHERE id = ?`)
       .bind(verdict, note, s.id)
       .run();
-    // Score the pattern: WON +1, LOST -1. Relearn signal for future analysis.
+    // Score the pattern: WON +1, SWING WON +3 (harder calls earn more),
+    // any LOST -1. Relearn signal for future analysis.
     const pattern = `${s.style} ${s.trend}`;
-    const delta = verdict === "WON" ? 1 : -1;
+    const delta = verdict === "WON" ? (s.style === "SWING" ? 3 : 1) : -1;
     await db
       .prepare(
         `INSERT INTO scores(pattern, score, won, lost, updated_at)
@@ -615,7 +616,7 @@ async function trackRecord(db) {
     .all();
   if (scores.results?.length) {
     s +=
-      "\nĐIỂM PATTERN (thắng +1, thua -1 — ưu tiên điểm cao, học lại từ điểm âm):\n" +
+      "\nĐIỂM PATTERN (scalp thắng +1, swing thắng +3, thua -1 — ưu tiên điểm cao, học lại từ điểm âm):\n" +
       scores.results
         .map((r) => `- ${r.pattern}: ${r.score} (${r.won}W/${r.lost}L)`)
         .join("\n")
@@ -792,8 +793,23 @@ async function buildKnowledge(db) {
         lessons.results.map((r) => `- ${r.s}`).join("\n")
     );
   }
-  const digest = parts.join("\n").slice(0, 1500);
-  await db.prepare(`DELETE FROM memories WHERE kind = 'knowledge'`).run();
+  const proven = await db
+    .prepare(
+      `SELECT pattern, score, won, lost FROM scores
+       WHERE score > 0 ORDER BY score DESC`
+    )
+    .all();
+  if (proven.results?.length) {
+    parts.push(
+      "PATTERN ĐÃ CHỨNG MINH (cơ sở, ưu tiên dùng lại):\n" +
+        proven.results
+          .map((r) => `- ${r.pattern}: +${r.score} (${r.won}W/${r.lost}L)`)
+          .join("\n")
+    );
+  } else {
+    parts.push("Chưa có pattern nào điểm dương.");
+  }
+  const digest = parts.join("\n").slice(0, 1500);  await db.prepare(`DELETE FROM memories WHERE kind = 'knowledge'`).run();
   await db
     .prepare(`INSERT INTO memories(kind, content) VALUES('knowledge', ?)`)
     .bind(digest)
@@ -955,7 +971,7 @@ Explain each call with theory, in order:
 2. Chính trị/địa chính trị & tâm lý rủi ro (risk-on/off, trú ẩn, NHTW mua vàng).
 3. Kỹ thuật: nêu phương pháp (BOS/CHoCH, liquidity, S/R...).
 
-Always give BOTH a scalping entry and a swing entry (hold >1h) when data supports them. Suggest pending orders (BUY LIMIT / SELL STOP) with 3–10+ price levels across scenarios.
+Always give a SCALP entry. Give a SWING entry (hold >1h) ONLY when the entry is beautiful: likely a peak or bottom backed by trend projection (4H/1D structure, strong support/resistance, projected future path). If no swing-quality entry exists, write "Swing: — (chờ ...)" naming exactly what you are waiting for. Suggest pending orders (BUY LIMIT / SELL STOP) with 3–10+ price levels across scenarios.
 
 You MUST end every answer with this exact block. ONE trend value. Fill every line (use "—" only if truly unknown):
 
@@ -972,17 +988,17 @@ Lý do: <1 câu>
 \`\`\`
 
 Ví dụ câu trả lời đúng:
-- Giá **4136.44**, DXY suy yếu sau NFP.
+- Giá **4136.44**, DXY suy yếu sau NFP, 4H vừa BOS lên khỏi 4120.
 
 \`\`\`setup
 Xu hướng: TĂNG
-Kiểu: SCALPING
+Kiểu: SWING
 Entry: 4136.44
-TP: 4140.00 / 4148.00
-SL: 4130.00
-Lệnh chờ: BUY LIMIT 4132 / 4128 / 4124
+TP: 4150.00 / 4165.00
+SL: 4128.00
+Lệnh chờ: BUY LIMIT 4132 / 4128 / 4124 / 4120
 Scalp: 4136.44
-Swing: — (chờ BOS 4H)
+Swing: 4132.00 (đáy pullback sau BOS 4H, projection lên 4165)
 Lý do: NFP yếu làm USD giảm, nến 1H BOS lên
 \`\`\`
 

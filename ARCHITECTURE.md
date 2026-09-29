@@ -140,7 +140,7 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 |---|---|
 | `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
 | `setups` | setup số học được từ mỗi câu trả lời (trend/style/entry/tp/sl + `created_ts` ghi thời điểm AI trả lời, status OPEN→WON/LOST) — chấm tự động bằng nến mới |
-| `scores` | điểm từng pattern (`SCALPING LONG`...): thắng +1, thua -1, kèm won/lost — nạp vào prompt để AI ưu tiên pattern điểm cao, học lại từ điểm âm |
+| `scores` | điểm từng pattern (`SCALPING LONG`...): scalp thắng +1, swing thắng +3, thua -1, kèm won/lost — pattern điểm dương thành cơ sở trong digest, nạp vào prompt |
 | `snapshots` | nến gọn `[[t,o,h,l,c],...]` mỗi lần chat |
 | `news_cache` | payload tin vĩ mô + `updated_at` |
 | `meta` | `usage_bytes` — byte tích lũy để hiển thị (ước tính, không trừ khi tỉa) |
