@@ -1,5 +1,5 @@
 function formatTime(ts) {
-  if (!ts) return "—";
+  if (!ts) return "-";
   return new Date(ts).toLocaleTimeString();
 }
 
@@ -13,7 +13,7 @@ export default function Analysis({ data, timeframes, loading, lastFetch }) {
     const arr = data?.[key] || [];
     const last = arr[arr.length - 1];
     const prev = arr[arr.length - 2];
-    if (!last || !prev) return "—";
+    if (!last || !prev) return "-";
     const d = last.close - prev.close;
     return `${d >= 0 ? "+" : ""}${d.toFixed(2)}`;
   }
@@ -25,7 +25,7 @@ export default function Analysis({ data, timeframes, loading, lastFetch }) {
         const last = lastOf(tf.key);
         return (
           <p key={tf.key}>
-            {tf.label}: {last ? last.close.toFixed(2) : "—"} (
+            {tf.label}: {last ? last.close.toFixed(2) : "-"} (
             {changeOf(tf.key)}) · {formatTime(lastFetch?.[tf.key])}
           </p>
         );

@@ -33,7 +33,7 @@ const TIMEFRAMES = [
 const NORMAL_TFS = ["5m", "1h", "4h"];
 
 function formatTime(ts) {
-  if (!ts) return "—";
+  if (!ts) return "-";
   return new Date(ts).toLocaleTimeString();
 }
 
@@ -70,7 +70,19 @@ function App() {
     }
     return "light";
   });
+  const [style, setStyle] = useState(() => {
+    try {
+      const saved = localStorage.getItem("xau_style");
+      if (saved === "ios" || saved === "terminal" || saved === "huawei") {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return "ios";
+  });
   const chartRef = useRef(null);
+  const BUILD_ID = import.meta.env.VITE_BUILD_ID || "dev";
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -80,6 +92,15 @@ function App() {
       // ignore
     }
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.dataset.style = style;
+    try {
+      localStorage.setItem("xau_style", style);
+    } catch {
+      // ignore
+    }
+  }, [style]);
 
   async function refreshStorage() {
     try {
@@ -110,7 +131,7 @@ function App() {
     const q = getQuotaInfo();
     if (q.shouldStop) {
       setQuota(q);
-      setError("Twelve Data daily quota reached — requests paused.");
+      setError("Twelve Data daily quota reached. Requests paused.");
       return null;
     }
     setUpdating((u) => ({ ...u, [tf.key]: true }));
@@ -227,12 +248,27 @@ function App() {
       <header>
         <div className="header-row">
           <h1>XAUUSD AI Analyzer</h1>
+          <div className="style-switch">
+            {[
+              ["ios", "iOS"],
+              ["terminal", "Terminal"],
+              ["huawei", "Huawei"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                className={style === key ? "active" : ""}
+                onClick={() => setStyle(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <button
             className="theme-toggle"
             onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-            title="Chuyển chế độ sáng / tối"
+            title="Chuyển chế độ sáng hoặc tối"
           >
-            {theme === "light" ? "🌙 Tối" : "☀️ Sáng"}
+            {theme === "light" ? "Chế độ tối" : "Chế độ sáng"}
           </button>
         </div>
         <Controls
@@ -276,7 +312,7 @@ function App() {
               />
             ) : (
               <div className="chart-empty">
-                Chưa có dữ liệu khung {activeTFConf.label} — bấm ⟳ để tải
+                Chưa có dữ liệu khung {activeTFConf.label}. Bấm ⟳ để tải
               </div>
             )
           ) : (
@@ -310,6 +346,18 @@ function App() {
           <Memory storage={storage} onSave={handleSaveMemory} />
         </aside>
       </main>
+
+      <footer className="footer">
+        Dev by Fexxwer · GitHub{" "}
+        <a
+          href="https://github.com/LupinDsama"
+          target="_blank"
+          rel="noreferrer"
+        >
+          LupinDsama
+        </a>{" "}
+        · bản {BUILD_ID}
+      </footer>
     </div>
   );
 }

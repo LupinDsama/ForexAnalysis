@@ -26,7 +26,7 @@ export default function News({ news, onRefresh }) {
         ForexFactory · cập nhật{" "}
         {news?.updated_at
           ? new Date(news.updated_at).toLocaleString()
-          : "—"}
+          : "-"}
       </p>
       <ul className="news-list">
         {events.slice(0, 10).map((e, i) => (
@@ -37,14 +37,14 @@ export default function News({ news, onRefresh }) {
             <div>
               <strong>{e.title}</strong>
               <div className="muted">
-                {e.date} {e.time} · F:{e.forecast || "—"} P:
-                {e.previous || "—"}
+                {e.date} {e.time} · F:{e.forecast || "-"} P:
+                {e.previous || "-"}
               </div>
             </div>
           </li>
         ))}
         {events.length === 0 && (
-          <li className="muted">Chưa có tin — bấm ⟳ để tải</li>
+          <li className="muted">Chưa có tin. Bấm ⟳ để tải</li>
         )}
       </ul>
       <a

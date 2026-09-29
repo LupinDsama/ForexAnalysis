@@ -10,7 +10,7 @@ export default function Controls({ chartVisible, quota, onToggleChart }) {
           Requests today: {quota.used}/{quota.limit}
         </span>
         <span>Remaining: {quota.remaining}</span>
-        {quota.shouldStop && <span className="warn">Quota reached — paused</span>}
+        {quota.shouldStop && <span className="warn">Quota reached. Paused</span>}
       </div>
     </div>
   );

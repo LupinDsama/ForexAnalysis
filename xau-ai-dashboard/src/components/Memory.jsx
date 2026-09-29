@@ -50,13 +50,16 @@ export default function Memory({ storage, onSave }) {
         <div className="fill" style={{ width: `${Math.max(pct, 0.5)}%` }} />
       </div>
       <p className="muted">
-        Phân tích: {tables.memories ?? "—"} · Snapshot nến:{" "}
-        {tables.snapshots ?? "—"} · Setup: {setups.OPEN ?? 0} mở /{" "}
-        {setups.WON ?? 0} thắng / {setups.LOST ?? 0} thua
+        Phân tích: {tables.memories ?? "-"} · Snapshot nến:{" "}
+        {tables.snapshots ?? "-"}
+      </p>
+      <p className="muted">
+        Setup: {setups.OPEN ?? 0} mở, {setups.WON ?? 0} thắng,{" "}
+        {setups.LOST ?? 0} thua
       </p>
       <p className="muted">
         Chỉ lưu điều quan trọng: setup có Entry/TP/SL, bài học [phân tích],
-        quy tắc tay — chat xã giao không lưu
+        quy tắc tay. Chat xã giao không lưu.
       </p>
 
       <div className="memory-form">

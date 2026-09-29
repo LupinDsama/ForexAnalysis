@@ -163,7 +163,7 @@ export default function Chat({
           onClick={onToggleBoost}
           title="Super Boost: lấy tươi cả 5 khung, phân tích sâu (tốn ~5 requests)"
         >
-          ⚡ Super Boost
+          Super Boost
         </button>
       </div>
       <div className="history">

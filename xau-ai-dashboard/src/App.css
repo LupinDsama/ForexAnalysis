@@ -1,3 +1,4 @@
+/* ============ MODE TOKENS (light / dark) ============ */
 :root,
 [data-theme="light"] {
   --bg: #f2f2f7;
@@ -12,14 +13,9 @@
   --input-border: #d1d1d6;
   --bubble-ai: #ffffff;
   --bubble-ai-border: #e5e5ea;
-  --accent: #007aff;
-  --accent-2: #34c759;
-  --gold: #b8860b;
-  --gold-soft: #fef3c7;
   --seg-bg: #e9e9ee;
   --danger: #ff3b30;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  --radius: 18px;
 }
 
 [data-theme="dark"] {
@@ -35,17 +31,40 @@
   --input-border: #374151;
   --bubble-ai: #111c33;
   --bubble-ai-border: #243352;
-  --accent: #3b82f6;
-  --accent-2: #22c55e;
-  --gold: #fbbf24;
-  --gold-soft: #3a2f10;
   --seg-bg: #111827;
   --danger: #f87171;
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-  --radius: 14px;
 }
 
-/* Unlock the Vite template's narrow #root so the app fills the viewport. */
+/* ============ STYLE TOKENS (ios / terminal / huawei) ============ */
+[data-style="ios"] {
+  --radius: 18px;
+  --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  --brand: #b8860b;
+  --accent-2: #34c759;
+}
+[data-theme="light"][data-style="ios"] { --accent: #007aff; }
+[data-theme="dark"][data-style="ios"] { --accent: #0a84ff; --brand: #fbbf24; }
+
+[data-style="terminal"] {
+  --radius: 8px;
+  --font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --accent-2: #34c759;
+  --brand: inherit;
+}
+[data-theme="light"][data-style="terminal"] { --accent: #0b6e2f; --brand: #0b6e2f; }
+[data-theme="dark"][data-style="terminal"] { --accent: #2bff88; --brand: #2bff88; }
+
+[data-style="huawei"] {
+  --radius: 22px;
+  --font: -apple-system, BlinkMacSystemFont, "HarmonyOS Sans", "Segoe UI", sans-serif;
+  --accent-2: #34c759;
+  --brand: #b8860b;
+}
+[data-theme="light"][data-style="huawei"] { --accent: #0a59cc; }
+[data-theme="dark"][data-style="huawei"] { --accent: #4d9fff; --brand: #fbbf24; }
+
+/* ============ BASE ============ */
 #root {
   width: 100%;
   max-width: none;
@@ -54,13 +73,20 @@
 }
 
 .app {
-  min-height: 100vh;  background:
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background:
     radial-gradient(1200px 400px at 20% -10%, var(--bg-glow-1), transparent),
     radial-gradient(1000px 380px at 90% 0%, var(--bg-glow-2), transparent),
     var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  font-family: var(--font);
   -webkit-font-smoothing: antialiased;
+}
+
+[data-style="terminal"] .app {
+  background: var(--bg);
 }
 
 .app header {
@@ -74,11 +100,16 @@
   z-index: 10;
 }
 
+[data-style="huawei"] .app header {
+  border-bottom: 2px solid var(--accent);
+}
+
 .header-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .app h1 {
@@ -86,19 +117,53 @@
   font-size: 22px;
   letter-spacing: 2px;
   font-weight: 800;
-  color: var(--gold);
+  color: var(--brand);
   flex: 1;
+  min-width: 200px;
 }
 
-.theme-toggle {
+/* Shape rule: buttons and toggles are pills everywhere,
+   cards and inputs follow the per-style radius. */
+.theme-toggle,
+.style-switch button,
+.controls button,
+.tf-tabs .refresh-one,
+.quota,
+.chat-head .boost {
+  border-radius: 999px;
+}
+
+.theme-toggle,
+.style-switch button {
   background: var(--seg-bg);
   color: var(--text);
   border: 1px solid var(--panel-border);
-  border-radius: 999px;
-  padding: 7px 14px;
+  padding: 7px 13px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
+  font-family: var(--font);
+  white-space: nowrap;
+}
+
+.style-switch {
+  display: flex;
+  gap: 4px;
+  background: var(--seg-bg);
+  border-radius: 999px;
+  padding: 3px;
+}
+
+.style-switch button {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+}
+
+.style-switch button.active {
+  background: var(--input-bg);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
 }
 
 .controls {
@@ -113,10 +178,10 @@
   color: var(--text);
   border: 1px solid var(--input-border);
   padding: 8px 16px;
-  border-radius: 999px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+  font-family: var(--font);
   transition: transform 0.1s;
 }
 
@@ -132,7 +197,6 @@
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
   padding: 8px 16px;
-  border-radius: 999px;
 }
 
 .quota .warn {
@@ -145,6 +209,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
   padding: 20px clamp(10px, 2vw, 28px) 32px;
+  flex: 1;
 }
 
 .chart-panel, .ai-panel {
@@ -156,6 +221,13 @@
   border-radius: var(--radius);
   padding: 18px;
   box-shadow: var(--shadow);
+  align-self: start;
+}
+
+[data-style="terminal"] .chart-panel,
+[data-style="terminal"] .ai-panel {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .chart-hidden, .chart-empty {
@@ -179,7 +251,7 @@
   color: var(--muted);
 }
 
-/* iOS segmented control */
+/* Timeframe tabs: segmented on ios, square on terminal, soft pill on huawei */
 .tf-tabs {
   display: flex;
   gap: 4px;
@@ -200,7 +272,8 @@
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
-  transition: all 0.18s;
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
 }
 
 .tf-tabs button.active {
@@ -209,13 +282,40 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
 }
 
+[data-style="terminal"] .tf-tabs {
+  border-radius: 6px;
+  border: 1px solid var(--input-border);
+}
+
+[data-style="terminal"] .tf-tabs button {
+  border-radius: 4px;
+}
+
+[data-style="terminal"] .tf-tabs button.active {
+  background: var(--accent);
+  color: #06130c;
+  box-shadow: none;
+}
+
+[data-theme="light"][data-style="terminal"] .tf-tabs button.active {
+  color: #ffffff;
+}
+
+[data-style="huawei"] .tf-tabs {
+  border-radius: 999px;
+}
+
+[data-style="huawei"] .tf-tabs button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
 .tf-tabs .refresh-one {
   margin-left: 8px;
   background: var(--input-bg);
-  border-radius: 9px;
+  color: var(--accent);
   font-size: 15px;
   padding: 7px 12px;
-  color: var(--accent);
 }
 
 .analysis {
@@ -224,17 +324,26 @@
   margin-bottom: 12px;
 }
 
-.analysis h2, .chat h2, .memory h2 {  font-size: 13px;
-  margin: 0 0 10px;
+.analysis h2, .chat-head h2, .memory h2, .news-head h2 {
+  font-size: 13px;
+  margin: 0;
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: var(--muted);
   font-weight: 700;
 }
 
+[data-style="terminal"] .analysis h2,
+[data-style="terminal"] .chat-head h2,
+[data-style="terminal"] .memory h2,
+[data-style="terminal"] .news-head h2 {
+  letter-spacing: 1px;
+}
+
 .analysis p {
   margin: 4px 0;
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
 .muted {
@@ -253,25 +362,24 @@
 
 .chat-head h2 {
   flex: 1;
-  margin: 0;
 }
 
 .boost {
   background: var(--seg-bg);
   color: var(--muted);
   border: 1px solid var(--panel-border);
-  border-radius: 999px;
   padding: 5px 12px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
+  font-family: var(--font);
+  white-space: nowrap;
 }
 
 .boost.on {
   background: linear-gradient(135deg, #f59e0b, #ef4444);
   color: #fff;
   border-color: transparent;
-  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
 }
 
 .chat .history {
@@ -294,6 +402,14 @@
   overflow-wrap: break-word;
 }
 
+[data-style="terminal"] .msg {
+  border-radius: 8px;
+}
+
+[data-style="huawei"] .msg {
+  border-radius: 22px;
+}
+
 .msg.user {
   align-self: flex-end;
   background: var(--accent);
@@ -303,10 +419,6 @@
   white-space: pre-wrap;
 }
 
-[data-theme="light"] .msg.user {
-  background: #007aff;
-}
-
 .msg.ai {
   align-self: flex-start;
   background: var(--bubble-ai);
@@ -314,7 +426,6 @@
   border-bottom-left-radius: 6px;
   width: 100%;
   box-sizing: border-box;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .waiting .wait-text {
@@ -351,6 +462,10 @@
   to { background-position: -200% 0; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .shimmer span { animation: none; }
+}
+
 .msg-shot {
   width: 100%;
   border-radius: 12px;
@@ -365,7 +480,7 @@
 .md p:last-child { margin-bottom: 0; }
 .md ul, .md ol { margin: 7px 0; padding-left: 20px; }
 .md li { margin: 4px 0; }
-.md li::marker { color: var(--gold); }
+.md li::marker { color: var(--brand); }
 .md strong { color: var(--text); }
 .md code {
   background: var(--seg-bg);
@@ -409,6 +524,14 @@
   background: var(--seg-bg);
 }
 
+[data-style="terminal"] .setup-card {
+  border-radius: 6px;
+}
+
+[data-style="huawei"] .setup-card {
+  border-radius: 18px;
+}
+
 .setup-trend {
   padding: 9px 12px;
   font-weight: 800;
@@ -419,7 +542,7 @@
 
 .setup-trend.up { background: rgba(52, 199, 89, 0.16); color: #248a3d; }
 .setup-trend.down { background: rgba(255, 59, 48, 0.12); color: var(--danger); }
-.setup-trend.side { background: rgba(184, 134, 11, 0.14); color: var(--gold); }
+.setup-trend.side { background: rgba(184, 134, 11, 0.14); color: var(--brand); }
 [data-theme="dark"] .setup-trend.up { color: #4ade80; }
 
 .setup-rows > div {
@@ -430,6 +553,7 @@
   font-size: 13.5px;
   border-top: 1px solid var(--bubble-ai-border);
   background: var(--bubble-ai);
+  font-variant-numeric: tabular-nums;
 }
 
 .setup-rows span { color: var(--muted); }
@@ -463,7 +587,16 @@
   border-radius: 14px;
   padding: 10px 12px;
   font-size: 14px;
+  font-family: var(--font);
   resize: vertical;
+}
+
+[data-style="terminal"] .chat-box textarea {
+  border-radius: 6px;
+}
+
+[data-style="huawei"] .chat-box textarea {
+  border-radius: 18px;
 }
 
 .chat-box textarea:focus {
@@ -480,6 +613,8 @@
   cursor: pointer;
   font-weight: 600;
   font-size: 15px;
+  font-family: var(--font);
+  white-space: nowrap;
 }
 
 .chat-box button:disabled {
@@ -495,7 +630,6 @@
   padding: 10px 14px;
   border-radius: 14px;
   font-size: 14px;
-  max-width: 1720px;
 }
 
 /* ---------- news ---------- */
@@ -510,6 +644,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 6px;
 }
 
 .news-head h2 {
@@ -601,7 +736,7 @@
 
 .storage-bar .fill {
   height: 100%;
-  background: linear-gradient(90deg, #059669, #34c759);
+  background: var(--accent-2);
   border-radius: 4px;
   transition: width 0.3s;
 }
@@ -618,6 +753,7 @@
   border: 1px solid var(--input-border);
   border-radius: 10px;
   padding: 6px;
+  font-family: var(--font);
 }
 
 .memory-form textarea {
@@ -629,16 +765,19 @@
   border-radius: 10px;
   padding: 6px 8px;
   font-size: 13px;
+  font-family: var(--font);
 }
 
 .memory-form button {
-  background: #34c759;
+  background: var(--accent-2);
   color: white;
   border: none;
   border-radius: 10px;
   padding: 0 14px;
   cursor: pointer;
   font-weight: 600;
+  font-family: var(--font);
+  white-space: nowrap;
 }
 
 .memory-list {
@@ -655,6 +794,20 @@
 .memory-list li {
   padding: 5px 0;
   border-top: 1px solid var(--panel-border);
+}
+
+/* ---------- footer ---------- */
+
+.footer {
+  text-align: center;
+  padding: 14px 20px 20px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.footer a {
+  color: var(--accent);
+  text-decoration: none;
 }
 
 @media (max-width: 1100px) {
@@ -680,7 +833,6 @@
 
   .chart-panel, .ai-panel {
     padding: 12px;
-    border-radius: 16px;
   }
 
   .chart-mount,
