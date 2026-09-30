@@ -134,6 +134,7 @@ async function ensureSchema(db) {
         sl REAL NOT NULL,
         status TEXT NOT NULL DEFAULT 'OPEN',
         judged_at TEXT,
+        activated_ts INTEGER,
         note TEXT
       )`
     ),
@@ -150,6 +151,13 @@ async function ensureSchema(db) {
       `INSERT OR IGNORE INTO meta(key, value) VALUES('usage_bytes', '0')`
     ),
   ]);
+  // Older DBs lack activated_ts (added later): best-effort migrate,
+  // outside the batch so a duplicate-column error can't roll it back.
+  try {
+    await db.prepare(`ALTER TABLE setups ADD COLUMN activated_ts INTEGER`).run();
+  } catch {
+    // column already exists
+  }
 }
 
 async function addUsage(db, n) {
@@ -190,6 +198,12 @@ async function storageInfo(db) {
        WHERE status = 'OPEN' ORDER BY id DESC LIMIT 20`
     )
     .all();
+  const pendingSetups = await db
+    .prepare(
+      `SELECT id, trend, style, entry, tp, sl, created_at, created_ts FROM setups
+       WHERE status = 'PENDING' ORDER BY id DESC LIMIT 20`
+    )
+    .all();
   const judgedSetups = await db
     .prepare(
       `SELECT id, trend, style, entry, tp, sl, status, created_ts FROM setups
@@ -206,6 +220,7 @@ async function storageInfo(db) {
     },
     scores: sc.results || [],
     open_setups: openSetups.results || [],
+    pending_setups: pendingSetups.results || [],
     judged_setups: judgedSetups.results || [],
     recent: recent.results || [],
   };
@@ -699,8 +714,22 @@ function extractSetup(text) {
   };
 }
 
-function judgeCandles(marketData) {
-  // Finest series available for verdicts: 1m, else 5m, else 15m.
+function marketLast(marketData) {
+  const pick = (arr) => {
+    if (!Array.isArray(arr) || !arr.length) return null;
+    const v = Number(arr[arr.length - 1]?.close);
+    return Number.isFinite(v) ? v : null;
+  };
+  if (Array.isArray(marketData)) return pick(marketData);
+  const tfs = marketData?.timeframes || {};
+  for (const k of ["1m", "5m", "15m", "1h", "4h", "1D"]) {
+    const v = pick(tfs[k]?.candles);
+    if (v != null) return v;
+  }
+  return null;
+}
+
+function judgeCandles(marketData) {  // Finest series available for verdicts: 1m, else 5m, else 15m.
   const pick = (arr) =>
     Array.isArray(arr)
       ? arr.filter(
@@ -720,26 +749,55 @@ function judgeCandles(marketData) {
   return [];
 }
 
+// Entry $2+ away from market = pending order, else market order.
+const PENDING_GAP = 2.0;
+
 async function judgeSetups(db, candles) {
   if (!candles.length) return [];
   const nowSec = Math.floor(Date.now() / 1000);
   const rows = await db
     .prepare(
-      `SELECT * FROM setups WHERE status = 'OPEN' AND created_ts > ? ORDER BY id ASC`
+      `SELECT * FROM setups WHERE status IN ('OPEN', 'PENDING')
+       AND created_ts > ? ORDER BY id ASC`
     )
     .bind(nowSec - 7 * 86400)
     .all();
   const verdicts = [];
   for (const s of rows.results || []) {
     if (!(s.entry > 0) || !(s.tp > 0) || !(s.sl > 0)) continue;
-    // Range judging for every trend: whichever boundary (TP/SL) the price
-    // touches first after the setup time decides. Same candle hits both
-    // sides → conservative LOST.
+    let activeFrom = s.created_ts;
+    // Pending activates when a candle after placement crosses entry.
+    // Pending is never judged WON/LOST.
+    if (s.status === "PENDING") {
+      let touched = null;
+      for (const c of candles) {
+        if (!(c.time > s.created_ts)) continue;
+        if (c.low <= s.entry && s.entry <= c.high) {
+          touched = c.time;
+          break;
+        }
+      }
+      if (touched == null) continue; // still waiting
+      activeFrom = touched;
+      await db
+        .prepare(
+          `UPDATE setups SET status = 'OPEN', activated_ts = ?, note = ?
+           WHERE id = ?`
+        )
+        .bind(
+          touched,
+          `Kích hoạt lúc ${new Date(touched * 1000).toISOString()}`,
+          s.id
+        )
+        .run();
+    }
+    // Range judging from activation on: TP first WON, SL first LOST.
+    // Same candle hits both sides → conservative LOST.
     let verdict = null;
     let hitPrice = null;
     let hitTime = null;
     for (const c of candles) {
-      if (!(c.time > s.created_ts)) continue;
+      if (!(c.time > activeFrom)) continue;
       const slHit =
         (s.sl <= s.entry && c.low <= s.sl) ||
         (s.sl >= s.entry && c.high >= s.sl);
@@ -1193,7 +1251,9 @@ async function chatWithAI(request, env) {
       }
     }
 
-    const systemInstruction = `You are a Vietnamese trading chatbot for an XAU/USD dashboard. Chat naturally like a knowledgeable friend: concise, direct, a little personality, but every call stays grounded in data. Always reply in Vietnamese with Markdown (bullets "- ", **bold** prices).
+    const systemInstruction = `You are a Vietnamese trading chatbot for an XAU/USD dashboard. Chat naturally like a knowledgeable friend: concise, direct, a little personality, but every call stays grounded in data. Always reply in Vietnamese WITH FULL DIACRITICS (đầy đủ dấu), even when the user types without them. Use Markdown (bullets "- ", **bold** prices).
+
+Think like an analyst: candles first, then macro news + memory + track record of your own past setups, reason step by step, then conclude. Vary phrasing. OK to stand aside when unclear. Learn from your WON/LOST history — avoid repeating losing patterns.
 
 Think like an analyst: candles first, then macro news + memory + track record of your own past setups, reason step by step, then conclude. Vary phrasing. OK to stand aside when unclear. Learn from your WON/LOST history — avoid repeating losing patterns.
 
@@ -1206,7 +1266,7 @@ Explain each call with theory, in order:
 2. Chính trị/địa chính trị & tâm lý rủi ro (risk-on/off, trú ẩn, NHTW mua vàng).
 3. Kỹ thuật: nêu phương pháp (BOS/CHoCH, liquidity, S/R...).
 
-Always give a SCALP entry. Give a SWING entry (hold >1h) ONLY when the entry is beautiful: likely a peak or bottom backed by trend projection (4H/1D structure, strong support/resistance, projected future path). If no swing-quality entry exists, write "Swing: — (chờ ...)" naming exactly what you are waiting for. Suggest pending orders (BUY LIMIT / SELL STOP) with 3–10+ price levels across scenarios.
+Always give a SCALP entry. Give a SWING entry (hold >1h) ONLY when the entry is beautiful: likely a peak or bottom backed by trend projection (4H/1D structure, strong support/resistance, projected future path). If no swing-quality entry exists, write "Swing: — (chờ ...)" naming exactly what you are waiting for. Suggest pending orders (BUY LIMIT / SELL STOP) with 3–10+ price levels across scenarios. An entry more than $2 from current market is a PENDING order: state its trigger condition. When the trend invalidates a pending order, cancel it by writing exactly "HỦY LỆNH CHỜ #id" with a one-line reason (cancelled orders are never scored).
 
 Direction check before answering: for TĂNG/LONG, TP must be ABOVE entry and SL BELOW entry; for GIẢM/SHORT, TP BELOW entry and SL ABOVE entry. Never output a LONG with TP below entry.
 
@@ -1269,13 +1329,34 @@ Track record and lessons to stay consistent with:`;
     text = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
     if (env.DB) {
+      // AI-cancelled pendings: "HỦY LỆNH CHỜ #id" anywhere in the reply.
+      // Cancelled orders are never judged WON/LOST.
+      const cancels = [
+        ...text.matchAll(/hủy lệnh chờ\s*#(\d+)|cancel\s*#(\d+)/gi),
+      ]
+        .map((m) => Number(m[1] || m[2]))
+        .filter((n) => Number.isFinite(n));
+      for (const id of cancels) {
+        await env.DB.prepare(
+          `UPDATE setups SET status = 'CANCELLED', judged_at = datetime('now'),
+           note = 'AI hủy theo xu hướng' WHERE id = ? AND status IN ('PENDING', 'OPEN')`
+        )
+          .bind(id)
+          .run();
+      }
       // Selective saving: only what helps future analysis.
       const tagged = /\[phân tích\]/i.test(prompt);
       const setup = extractSetup(text);
       if (setup) {
+        // Entry far from market = pending order, else market order.
+        const lastPx = marketLast(marketData);
+        const status =
+          lastPx != null && Math.abs(setup.entry - lastPx) > PENDING_GAP
+            ? "PENDING"
+            : "OPEN";
         await env.DB.prepare(
           `INSERT INTO setups(created_ts, trend, style, entry, tp, sl, status)
-           VALUES(?, ?, ?, ?, ?, ?, 'OPEN')`
+           VALUES(?, ?, ?, ?, ?, ?, ?)`
         )
           .bind(
             Math.floor(Date.now() / 1000),
@@ -1283,7 +1364,8 @@ Track record and lessons to stay consistent with:`;
             setup.style,
             setup.entry,
             setup.tp,
-            setup.sl
+            setup.sl,
+            status
           )
           .run();
         await addUsage(

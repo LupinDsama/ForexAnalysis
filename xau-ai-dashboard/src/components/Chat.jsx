@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -133,6 +133,16 @@ function AiMessage({ msg }) {
   );
 }
 
+const MENTIONS = [
+  { key: "1m", label: "1m", hint: "khung 1 phút", insert: "@1m " },
+  { key: "5m", label: "5m", hint: "khung 5 phút", insert: "@5m " },
+  { key: "15m", label: "15m", hint: "khung 15 phút", insert: "@15m " },
+  { key: "1h", label: "1H", hint: "khung 1 giờ", insert: "@1H " },
+  { key: "4h", label: "4H", hint: "khung 4 giờ", insert: "@4H " },
+  { key: "1d", label: "1D", hint: "khung ngày", insert: "@1D " },
+  { key: "phan-tich", label: "[phân tích]", hint: "lưu thành bài học", insert: "[phân tích] " },
+];
+
 export default function Chat({
   question,
   setQuestion,
@@ -144,14 +154,55 @@ export default function Chat({
   onSend,
 }) {
   const bottomRef = useRef(null);
+  const inputRef = useRef(null);
+  const [mentionQuery, setMentionQuery] = useState(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [history, asking]);
 
+  function updateMention(value, caret) {
+    const before = value.slice(0, caret);
+    const m = /@([a-zA-Z0-9à-ỹÀ-Ỹ-]*)$/.exec(before);
+    setMentionQuery(m ? m[1] : null);
+  }
+
+  const mentionMatches =
+    mentionQuery == null
+      ? []
+      : MENTIONS.filter((x) =>
+          x.label.toLowerCase().includes(mentionQuery.toLowerCase())
+        );
+
+  function pickMention(item) {
+    const el = inputRef.current;
+    const caret = el?.selectionStart ?? question.length;
+    const before = question.slice(0, caret).replace(/@[a-zA-Z0-9à-ỹÀ-Ỹ-]*$/, item.insert);
+    const next = before + question.slice(caret);
+    setQuestion(next);
+    setMentionQuery(null);
+    requestAnimationFrame(() => {
+      el?.focus();
+      const pos = before.length;
+      el?.setSelectionRange(pos, pos);
+    });
+  }
+
   function handleKey(e) {
+    if (mentionQuery != null && mentionMatches.length) {
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        pickMention(mentionMatches[0]);
+        return;
+      }
+      if (e.key === "Escape") {
+        setMentionQuery(null);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      setMentionQuery(null);
       onSend();
     }
   }
@@ -196,12 +247,29 @@ export default function Chat({
         <div ref={bottomRef} />
       </div>
       <div className="chat-box">
-        <textarea
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onKeyDown={handleKey}
-          placeholder="Hỏi AI... (gõ [phân tích] để lưu thành bài học)"
-        />
+        <div className="chat-input-wrap">
+          <textarea
+            ref={inputRef}
+            value={question}
+            onChange={(e) => {
+              setQuestion(e.target.value);
+              updateMention(e.target.value, e.target.selectionStart);
+            }}
+            onKeyDown={handleKey}
+            onClick={(e) => updateMention(question, e.target.selectionStart)}
+            placeholder="Hỏi AI... (@ khung giờ, [phân tích] để lưu bài học)"
+          />
+          {mentionQuery != null && mentionMatches.length > 0 && (
+            <ul className="mention-popup">
+              {mentionMatches.map((m) => (
+                <li key={m.key} onMouseDown={(e) => { e.preventDefault(); pickMention(m); }}>
+                  <strong>{m.label}</strong>
+                  <span className="muted"> {m.hint}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <button onClick={onSend} disabled={asking}>
           {asking ? "..." : "Send"}
         </button>

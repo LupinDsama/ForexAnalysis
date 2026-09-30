@@ -277,14 +277,14 @@ function App() {
     setActiveTF(key);
   }
 
-  function buildMarketContext(dataObj, deep) {
+  function buildMarketContext(dataObj, deep, focus) {
     const timeframes = {};
     for (const tf of TIMEFRAMES) {
       if (!deep && !NORMAL_TFS.includes(tf.key)) continue;
       const arr = dataObj[tf.key] || [];
       const last = arr[arr.length - 1];
       const prev = arr[arr.length - 2];
-      const n = deep ? (tf.key === activeTF ? 60 : 30) : tf.key === activeTF ? 30 : 10;
+      const n = deep ? (tf.key === focus ? 60 : 30) : tf.key === focus ? 30 : 10;
       timeframes[tf.key] = {
         count: arr.length,
         last: last?.close ?? null,
@@ -292,7 +292,15 @@ function App() {
         candles: arr.slice(-n),
       };
     }
-    return { active: activeTF, boost: deep, timeframes };
+    return { active: focus, boost: deep, timeframes };
+  }
+
+  // @1H-style mention focuses that timeframe's depth for this question.
+  function focusTF(prompt) {
+    const m = /@(1m|5m|15m|1h|4h|1d)\b/i.exec(prompt || "");
+    if (!m) return activeTF;
+    const l = m[1].toLowerCase();
+    return l === "1d" ? "1D" : l;
   }
 
   async function handleAskAI() {
@@ -327,7 +335,7 @@ function App() {
         })
       );
       setAskPhase("ai");
-      const result = await askAI(q, buildMarketContext(current, boost), boost);
+      const result = await askAI(q, buildMarketContext(current, boost, focusTF(q)), boost);
       const text =
         result?.candidates?.[0]?.content?.parts?.[0]?.text ||
         "AI returned no response.";
@@ -394,6 +402,11 @@ function App() {
       } else {
         out.push({ time: t, position: "belowBar", color: "#1d4ed8", shape: "circle", text: "E" });
       }
+    }
+    for (const o of storage?.pending_setups || []) {
+      const t = snap(o.created_ts || Date.parse(o.created_at) / 1000);
+      if (t == null) continue;
+      out.push({ time: t, position: "aboveBar", color: "#8e8e93", shape: "circle", text: "P" });
     }
     for (const o of storage?.judged_setups || []) {
       const t = snap(o.created_ts || Date.parse(o.created_at) / 1000);
@@ -524,7 +537,18 @@ function App() {
         </section>
 
         <aside className="ai-panel">
-          <Orders storage={storage} onRefresh={refreshStorage} />
+          <Orders
+            title="Lệnh đang mở"
+            items={storage?.open_setups}
+            emptyText="Không có lệnh mở"
+            onRefresh={refreshStorage}
+          />
+          <Orders
+            title="Lệnh chờ"
+            items={storage?.pending_setups}
+            emptyText="Không có lệnh chờ"
+            onRefresh={refreshStorage}
+          />
           <Analysis
             data={data}
             timeframes={TIMEFRAMES}

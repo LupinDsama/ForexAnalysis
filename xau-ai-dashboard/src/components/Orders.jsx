@@ -6,10 +6,10 @@ function trendClass(t) {
   return "side";
 }
 
-export default function Orders({ storage, onRefresh }) {
+export default function Orders({ title, items, emptyText, onRefresh }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const list = storage?.open_setups || [];
+  const list = items || [];
 
   async function toggle() {
     if (!open) {
@@ -26,13 +26,13 @@ export default function Orders({ storage, onRefresh }) {
   return (
     <div className="orders">
       <button className="orders-toggle" onClick={toggle}>
-        Lệnh đang mở ({list.length}) {open ? "▾" : "▸"}
+        {title} ({list.length}) {open ? "▾" : "▸"}
       </button>
       {open && (
         <ul className="orders-list">
           {loading && <li className="muted">Đang tải...</li>}
           {!loading && list.length === 0 && (
-            <li className="muted">Không có lệnh mở</li>
+            <li className="muted">{emptyText}</li>
           )}
           {list.map((o) => (
             <li key={o.id}>

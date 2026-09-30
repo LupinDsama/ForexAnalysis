@@ -619,6 +619,44 @@
   gap: 8px;
 }
 
+.chat-input-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+}
+
+.chat-input-wrap textarea {
+  flex: 1;
+}
+
+.mention-popup {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  z-index: 20;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mention-popup li {
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13.5px;
+}
+
+.mention-popup li:hover {
+  background: var(--seg-bg);
+}
+
 .chat-box textarea {
   flex: 1;
   min-height: 64px;
