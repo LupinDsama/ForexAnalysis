@@ -120,10 +120,11 @@ POST /api/chat { prompt, marketData, boost }
   │     (RSI14, vị trí biên, ATR, chuỗi, swing H/L tính sẵn từng khung)
   │  5. Lưu snapshot nến hiện tại
   │  6. Gọi Workers AI (Qwen3-30B)
-  │  7. Lưu chọn lọc: setup số học được → bảng setups (OPEN, kèm created_ts
-  │     là thời điểm AI trả lời để lần fetch sau đối chiếu chạm TP/SL trước);
+  │  7. Lưu chọn lọc: setup số học được → bảng setups (entry cách giá >$2
+  │     thành PENDING, còn lại OPEN; kèm created_ts để lần fetch sau đối chiếu);
   │     prompt có [phân tích] → lesson full; setup đủ số → analysis gọn;
-  │     chat xã giao → không lưu gì
+  │     chat xã giao → không lưu gì; chat hỗ trợ @khung-giờ để focus sâu 1 khung
+  │     và ép dấu tiếng Việt đầy đủ
   ▼
 Frontend: markdown + thẻ Setup (Xu hướng/Kiểu/Entry/TP/SL/Lệnh chờ/Scalp/Swing)
 + ảnh chart + storage mới. Worker tự sửa nhãn trend nếu số mâu thuẫn
@@ -154,7 +155,7 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 | Bảng | Nội dung |
 |---|---|
 | `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `kb` (25 kiến thức nền: drivers vàng + phương pháp/RR/rủi ro, luôn nạp vào prompt), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
-| `setups` | setup số học được từ mỗi câu trả lời (trend/style/entry/tp/sl + `created_ts` ghi thời điểm AI trả lời, status OPEN→WON/LOST) — chấm tự động bằng nến mới |
+| `setups` | setup số học được (trend đã sanitize theo số, + `created_ts` + `activated_ts`, status OPEN/PENDING/WON/LOST/CANCELLED) — PENDING kích hoạt khi nến chạm entry, CANCELLED khi AI viết "HỦY LỆNH CHỜ #id", không bao giờ chấm WON/LOST |
 | `scores` | điểm từng pattern (`SCALPING LONG`...): scalp thắng +1, swing thắng +3, thua -1, kèm won/lost — pattern điểm dương thành cơ sở trong digest, nạp vào prompt |
 | `snapshots` | nến gọn `[[t,o,h,l,c],...]` mỗi lần chat |
 | `news_cache` | payload tin vĩ mô + `updated_at` |
