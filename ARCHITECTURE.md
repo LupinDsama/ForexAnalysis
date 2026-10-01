@@ -35,6 +35,7 @@ ForexAnalysis/                      # repo root = site Pages (branch deploy)
     │   ├── App.css                 # tokens sáng/tối + 3 style (ios/terminal/huawei), layout, responsive
     │   ├── components/
     │   │   ├── Chart.jsx           # wrapper Lightweight Charts (candlestick, screenshot, update live)
+    │   │   ├── RsiPanel.jsx        # dải RSI-14 SVG dưới chart (khớp theme)
     │   │   ├── Controls.jsx        # nút Chart ON/OFF + quota Twelve Data
     │   │   ├── Analysis.jsx        # giá/change 6 khung + giờ cập nhật
     │   │   ├── Chat.jsx            # bóng chat, markdown, thẻ Setup, ảnh chart, Super Boost

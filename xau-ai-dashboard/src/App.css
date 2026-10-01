@@ -245,6 +245,40 @@
   height: 500px;
 }
 
+.rsi-panel {
+  margin-top: 10px;
+  background: var(--seg-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 10px 12px 8px;
+}
+
+.rsi-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rsi-zone {
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.rsi-zone.hot { color: var(--danger); }
+.rsi-zone.cold { color: var(--accent-2); }
+
+.rsi-svg {
+  display: block;
+  width: 100%;
+  height: 96px;
+  /* offset the chart's right price axis so candles line up */
+  padding-right: 64px;
+  box-sizing: border-box;
+}
+
 .status {
   margin-top: 10px;
   font-size: 13px;

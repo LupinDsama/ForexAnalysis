@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Chart from "./components/Chart";
+import RsiPanel from "./components/RsiPanel";
 import Controls from "./components/Controls";
 import Analysis from "./components/Analysis";
 import Chat from "./components/Chat";
@@ -488,13 +489,16 @@ function App() {
 
           {chartVisible ? (
             activeData.length || updating[activeTF] ? (
-              <Chart
-                key={activeTF + theme}
-                ref={chartRef}
-                data={activeData}
-                markers={buildMarkers()}
-                theme={theme}
-              />
+              <>
+                <Chart
+                  key={activeTF + theme}
+                  ref={chartRef}
+                  data={activeData}
+                  markers={buildMarkers()}
+                  theme={theme}
+                />
+                <RsiPanel data={activeData} theme={theme} />
+              </>
             ) : (
               <div className="chart-empty">
                 Chưa có dữ liệu khung {activeTFConf.label}. Bấm ⟳ để tải
