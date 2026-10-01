@@ -55,6 +55,12 @@ export default {
       return livePrice(env);
     }
 
+    // Pending touch-check on every live tick (no Twelve credits spent):
+    // a pending activates when live price crosses its entry after placement.
+    if (url.pathname === "/api/touch" && request.method === "POST") {
+      return touchCheck(request, env);
+    }
+
     if (url.pathname === "/api/storage/clean" && request.method === "POST") {
       return storageClean(request, env);
     }
@@ -366,6 +372,67 @@ async function livePrice(env) {
       }
     }
     return json({ error: error.message }, 502);
+  }
+}
+
+async function touchCheck(request, env) {
+  try {
+    const body = await request.json();
+    const px = Number(body.price);
+    const ts =
+      Number(body.time) > 0
+        ? Math.floor(Number(body.time) / 1000)
+        : Math.floor(Date.now() / 1000);
+    if (!Number.isFinite(px)) return json({ error: "bad price" }, 400);
+    if (!env.DB) return json({ ok: true, activated: [] });
+    await ensureSchema(env.DB);
+    const db = env.DB;
+    const prevRow = await db
+      .prepare(`SELECT value FROM meta WHERE key = 'live_last'`)
+      .first();
+    let prev = null;
+    try {
+      const c = JSON.parse(prevRow?.value || "null");
+      if (c && Number.isFinite(c.price)) prev = { price: c.price, time: c.time || 0 };
+    } catch {
+      prev = null;
+    }
+    await db
+      .prepare(`INSERT OR REPLACE INTO meta(key, value) VALUES('live_last', ?)`)
+      .bind(JSON.stringify({ price: px, time: ts }))
+      .run();
+    const activated = [];
+    if (prev && prev.price !== px) {
+      const rows = await db
+        .prepare(
+          `SELECT id, entry, created_ts FROM setups
+           WHERE status = 'PENDING' AND created_ts > ?
+           ORDER BY id ASC`
+        )
+        .bind(Math.floor(Date.now() / 1000) - 7 * 86400)
+        .all();
+      for (const s of rows.results || []) {
+        // Only touches strictly after placement count.
+        if (!(s.created_ts <= prev.time)) continue;
+        if ((prev.price - s.entry) * (px - s.entry) <= 0) {
+          await db
+            .prepare(
+              `UPDATE setups SET status = 'OPEN', activated_ts = ?, note = ?
+               WHERE id = ? AND status = 'PENDING'`
+            )
+            .bind(
+              ts,
+              `Kích hoạt lúc ${new Date(ts * 1000).toISOString()} (live tick)`,
+              s.id
+            )
+            .run();
+          activated.push(s.id);
+        }
+      }
+    }
+    return json({ ok: true, activated });
+  } catch (error) {
+    return json({ error: error.message }, 500);
   }
 }
 

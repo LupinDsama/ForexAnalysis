@@ -193,6 +193,7 @@ thành từng khung ──► series.update() tại chỗ
 | `/api/storage/clean` | POST | `{password}` — cổng chống bấm nhầm (KHÔNG phải bảo mật thật, key nằm public) | `{ok, stats, storage}` — xóa snapshot >7 ngày (giữ 10 mới nhất), nén snapshot >3 ngày còn 50 nến cuối, analyses giữ 100 mới nhất (giữ hết lesson/rule/note), setups đã chấm >30 ngày; recompute usage |
 | `/api/news[?refresh=1]` | GET | — | `{events[≤15], headlines[≤8], updated_at}` |
 | `/api/live` | GET | — | `{price, time, source}` (+ `cached`/`stale` khi phù hợp). Nguồn theo thứ tự: Swissquote XAU/USD → gold-api → Yahoo GC=F. Chart gộp tick thành nến (`series.update`), nút Lệnh bật/tắt markers |
+| `/api/touch` | POST | `{price, time}` — kiểm tra lệnh chờ mỗi tick live 30s, không tốn Twelve | `{ok, activated: [ids]}` — kích hoạt khi giá đi qua entry sau lúc đặt |
 | `/api/whereami` | GET | — | debug egress (trace Cloudflare) |
 
 ## 6. Workflow vận hành

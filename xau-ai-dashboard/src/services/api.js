@@ -82,6 +82,20 @@ export async function getLive() {
   return data;
 }
 
+export async function touchLive(price, time) {
+  try {
+    const response = await fetch(`${API_URL}/api/touch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ price, time }),
+    });
+    if (!response.ok) return { ok: false, activated: [] };
+    return await response.json();
+  } catch {
+    return { ok: false, activated: [] };
+  }
+}
+
 export async function cleanStorage(password) {  const response = await fetch(`${API_URL}/api/storage/clean`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

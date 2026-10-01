@@ -16,6 +16,7 @@ import {
   getStorage,
   getNews,
   getLive,
+  touchLive,
   saveMemory,
   cleanStorage,
 } from "./services/api";
@@ -290,6 +291,22 @@ function App() {
         if (!stop && Number.isFinite(r.price)) {
           setLiveStatus("live");
           onTick(r.price, r.time, r.source);
+          // Pending touch-check on every tick (no Twelve credits).
+          try {
+            const t = await touchLive(r.price, r.time);
+            if (!stop && t.activated?.length) {
+              refreshStorage();
+              setHistory((h) => [
+                ...h,
+                {
+                  role: "system",
+                  text: `Lệnh chờ ${t.activated.map((id) => `#${id}`).join(", ")} đã kích hoạt thành lệnh mở`,
+                },
+              ]);
+            }
+          } catch {
+            // touch-check never breaks the live feed
+          }
         }
       } catch {
         if (!stop) setLiveStatus("error");
