@@ -551,6 +551,28 @@
   display: block;
 }
 
+.order-badge {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.order-badge.pending {
+  background: rgba(142, 142, 147, 0.16);
+  color: var(--muted);
+  border: 1px dashed var(--muted);
+}
+
+.order-badge.open {
+  background: rgba(29, 78, 216, 0.14);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
 .md p { margin: 7px 0; }
 .md p:first-child { margin-top: 0; }
 .md p:last-child { margin-bottom: 0; }

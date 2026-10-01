@@ -116,6 +116,16 @@ function AiMessage({ msg }) {
   const { setup, body } = parseSetup(msg.text);
   return (
     <div className="msg ai">
+      {msg.setupStatus === "PENDING" && (
+        <div className="order-badge pending">
+          LỆNH CHỜ{msg.setupId ? ` #${msg.setupId}` : ""} — chưa kích hoạt
+        </div>
+      )}
+      {msg.setupStatus === "OPEN" && (
+        <div className="order-badge open">
+          ĐANG MỞ{msg.setupId ? ` #${msg.setupId}` : ""}
+        </div>
+      )}
       {msg.shot && (
         <a href={msg.shot} target="_blank" rel="noreferrer">
           <img

@@ -1248,6 +1248,7 @@ async function chatWithAI(request, env) {
     let track = "";
     let storage = null;
     const md = describeMarket(marketData);
+    const curPx = marketLast(marketData);
     const tech = techDigest(marketData);
     let macro = "";
     if (env.DB) {
@@ -1341,6 +1342,9 @@ Track record and lessons to stay consistent with:`;
         {
           role: "user",
           content:
+            (curPx != null
+              ? `GIÁ HIỆN TẠI: ${curPx} (mới nhất, tin số này hơn mọi số cũ). Entry chính phải trong vòng $3 giá này; entry xa hơn chỉ được nằm ở Lệnh chờ/Swing.\n`
+              : "") +
             (macro ? macro + "\n" : "") +
             (tech ? tech + "\n" : "") +
             (track ? track + "\n" : "") +
@@ -1357,6 +1361,8 @@ Track record and lessons to stay consistent with:`;
     // Strip reasoning traces if the model emits them.
     text = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
+    let setupStatus = null;
+    let setupId = null;
     if (env.DB) {
       // AI-cancelled pendings: "HỦY LỆNH CHỜ #id" anywhere in the reply.
       // Cancelled orders are never judged WON/LOST.
@@ -1389,7 +1395,8 @@ Track record and lessons to stay consistent with:`;
           (setup.rr != null && setup.rr < 1)
             ? "PENDING"
             : "OPEN";
-        await env.DB.prepare(
+        setupStatus = status;
+        const ins = await env.DB.prepare(
           `INSERT INTO setups(created_ts, trend, style, entry, tp, sl, status)
            VALUES(?, ?, ?, ?, ?, ?, ?)`
         )
@@ -1403,6 +1410,7 @@ Track record and lessons to stay consistent with:`;
             status
           )
           .run();
+        setupId = Number(ins.meta?.last_row_id) || null;
         await addUsage(
           env.DB,
           byteLen(JSON.stringify(setup))
@@ -1439,6 +1447,8 @@ Track record and lessons to stay consistent with:`;
     return json({
       candidates: [{ content: { parts: [{ text }] } }],
       storage,
+      setup_status: setupStatus,
+      setup_id: setupId,
     });
   } catch (error) {
     return json({ error: error.message }, 500);

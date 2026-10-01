@@ -34,8 +34,8 @@ const TIMEFRAMES = [
   { key: "1D", label: "1D", interval: "1day", staleMs: 43_200_000 },
 ];
 
-// Normal chat: higher TFs only (cheap + stable). Super Boost: all six, deep.
-const NORMAL_TFS = ["5m", "1h", "4h"];
+// Normal chat: 1m (current price) + higher TFs. Super Boost: all six, deep.
+const NORMAL_TFS = ["1m", "5m", "1h", "4h"];
 
 // Candle length in seconds per timeframe, for live tick aggregation.
 const TF_BOUNDS = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1D": 86400 };
@@ -345,7 +345,16 @@ function App() {
         const pruned = h.map((m, idx) =>
           m.shot && idx < h.length - 4 ? { ...m, shot: null } : m
         );
-        return [...pruned, { role: "ai", text, shot }];
+        return [
+          ...pruned,
+          {
+            role: "ai",
+            text,
+            shot,
+            setupStatus: result?.setup_status || null,
+            setupId: result?.setup_id || null,
+          },
+        ];
       });
       if (result?.storage) setStorage(result.storage);
     } catch (e) {
