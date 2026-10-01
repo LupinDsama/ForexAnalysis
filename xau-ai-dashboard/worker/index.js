@@ -397,14 +397,23 @@ function compactCandles(candles) {
 }
 
 async function loadContext(db) {
+  // Lessons, rules and notes first (hard-won knowledge), then recent
+  // analyses. Losing/winning history outranks routine setups.
+  const key = await db
+    .prepare(
+      `SELECT kind, content, created_at FROM memories
+       WHERE kind IN ('lesson', 'rule', 'note')
+       ORDER BY id DESC LIMIT 10`
+    )
+    .all();
   const rows = await db
     .prepare(
       `SELECT kind, content, created_at FROM memories
-       WHERE kind != 'knowledge'
-       ORDER BY id DESC LIMIT 15`
+       WHERE kind = 'analysis'
+       ORDER BY id DESC LIMIT 8`
     )
     .all();
-  const mems = (rows.results || []).reverse();
+  const mems = [...(key.results || []), ...(rows.results || [])].reverse();
   const snap = await db
     .prepare(`SELECT data, taken_at FROM snapshots ORDER BY id DESC LIMIT 1`)
     .first();
@@ -780,8 +789,8 @@ function judgeCandles(marketData) {  // Finest series available for verdicts: 1m
   return [];
 }
 
-// Entry $1.5+ away from market = pending order, else market order.
-const PENDING_GAP = 1.5;
+// Entry within $2 of market = market order, else pending order.
+const PENDING_GAP = 2.0;
 
 async function judgeSetups(db, candles) {
   if (!candles.length) return [];
@@ -931,13 +940,23 @@ async function trackRecord(db) {
   const scores = await db
     .prepare(`SELECT pattern, score, won, lost FROM scores ORDER BY score DESC`)
     .all();
+  const lines = (scores.results || []).map(
+    (r) => `- ${r.pattern}: ${r.score} (${r.won}W/${r.lost}L)`
+  );
+  const negatives = (scores.results || []).filter((r) => r.score < 0);
   if (scores.results?.length) {
     s +=
-      "\nĐIỂM PATTERN (scalp thắng +1, swing thắng +3, thua -1 — ưu tiên điểm cao, học lại từ điểm âm):\n" +
-      scores.results
+      "\nĐIỂM PATTERN (scalp thắng +1, swing thắng +3, thua -1):\n" +
+      lines.join("\n").slice(0, 600);
+  }
+  if (negatives.length) {
+    s +=
+      "\nĐANG THUA SÂU, PHẢI HỌC LẠI — chỉ vào các pattern này khi có xác nhận " +
+      "gấp đôi (2 khung đồng thuận + tin ủng hộ), nếu không thì đứng ngoài:\n" +
+      negatives
         .map((r) => `- ${r.pattern}: ${r.score} (${r.won}W/${r.lost}L)`)
         .join("\n")
-        .slice(0, 600);
+        .slice(0, 400);
   }
   return s.slice(0, 1600);
 }
