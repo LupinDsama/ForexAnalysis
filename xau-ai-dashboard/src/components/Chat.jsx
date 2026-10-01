@@ -236,6 +236,10 @@ export default function Chat({
             <div key={i} className="msg user">
               {m.text}
             </div>
+          ) : m.role === "system" ? (
+            <div key={i} className="msg system">
+              {m.text}
+            </div>
           ) : (
             <AiMessage key={i} msg={m} />
           )

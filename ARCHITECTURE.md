@@ -123,10 +123,14 @@ POST /api/chat { prompt, marketData, boost }
   │  6. Gọi Workers AI (Qwen3-30B)
   │  7. Lưu chọn lọc: setup số học được → validate hình học (LONG cần
   │     SL<entry<TP, SHORT cần TP<entry<SL, sai thì sửa nhãn hoặc loại) →
-  │     bảng setups (entry cách giá >$1.5/không rõ giá/RR<1 thành PENDING;
+  │     bảng setups (entry cách giá >$2/không rõ giá/RR<1 thành PENDING;
   │     kèm created_ts); prompt có [phân tích] → lesson full;
   │     setup đủ số → analysis gọn; chat xã giao → không lưu gì;
-  │     chat hỗ trợ @khung-giờ để focus sâu 1 khung và ép dấu tiếng Việt đầy đủ
+  │     chat hỗ trợ @khung-giờ để focus sâu 1 khung và ép dấu tiếng Việt đầy đủ.
+  │     AI có quyền lệnh (ghi đúng cú pháp trong câu trả lời): MỞ LỆNH
+  │     (tạo tracked setup), ĐÓNG LỆNH #id (CLOSED, không tính điểm),
+  │     KÍCH HOẠT #id (pending→mở), XÓA/HỦY LỆNH CHỜ #id; kết quả trả về
+  │     trong `actions`, frontend hiện dòng xác nhận dưới câu trả lời
   ▼
 Frontend: markdown + thẻ Setup (Xu hướng/Kiểu/Entry/TP/SL/Lệnh chờ/Scalp/Swing)
 + ảnh chart + storage mới. Worker tự sửa nhãn trend nếu số mâu thuẫn

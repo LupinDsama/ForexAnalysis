@@ -45,6 +45,39 @@ function formatTime(ts) {
   return new Date(ts).toLocaleTimeString();
 }
 
+function describeActions(actions) {
+  if (!Array.isArray(actions) || !actions.length) return null;
+  const parts = [];
+  for (const a of actions) {
+    if (a.cmd === "open") {
+      parts.push(
+        a.id != null
+          ? `Đã mở lệnh #${a.id} (${a.trend}, ${a.status})`
+          : "Lệnh mở bị từ chối (số không hợp lệ)"
+      );
+    } else if (a.cmd === "close") {
+      parts.push(
+        a.result === "closed"
+          ? `Đã đóng lệnh #${a.id}`
+          : `Lệnh #${a.id} không mở nên không đóng được`
+      );
+    } else if (a.cmd === "activate") {
+      parts.push(
+        a.result === "opened"
+          ? `Đã đưa lệnh chờ #${a.id} sang mở`
+          : `Lệnh #${a.id} không phải chờ nên không kích hoạt được`
+      );
+    } else if (a.cmd === "delete") {
+      parts.push(
+        a.result === "deleted"
+          ? `Đã xóa lệnh chờ #${a.id}`
+          : `Lệnh #${a.id} không phải chờ nên không xóa được`
+      );
+    }
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
 function formatCountdown(ms) {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -340,12 +373,13 @@ function App() {
       const text =
         result?.candidates?.[0]?.content?.parts?.[0]?.text ||
         "AI returned no response.";
+      const sys = describeActions(result?.actions);
       setHistory((h) => {
         // Keep screenshots only on recent messages to bound memory.
         const pruned = h.map((m, idx) =>
           m.shot && idx < h.length - 4 ? { ...m, shot: null } : m
         );
-        return [
+        const next = [
           ...pruned,
           {
             role: "ai",
@@ -355,6 +389,8 @@ function App() {
             setupId: result?.setup_id || null,
           },
         ];
+        if (sys) next.push({ role: "system", text: sys });
+        return next;
       });
       if (result?.storage) setStorage(result.storage);
     } catch (e) {
@@ -560,6 +596,12 @@ function App() {
             title="Lệnh chờ"
             items={storage?.pending_setups}
             emptyText="Không có lệnh chờ"
+            onRefresh={refreshStorage}
+          />
+          <Orders
+            title="Đã đóng/hủy"
+            items={storage?.closed_setups}
+            emptyText="Chưa có lệnh đóng/hủy"
             onRefresh={refreshStorage}
           />
           <Analysis

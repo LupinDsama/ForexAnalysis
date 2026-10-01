@@ -227,6 +227,12 @@ async function storageInfo(db) {
        WHERE status = 'PENDING' ORDER BY id DESC LIMIT 20`
     )
     .all();
+  const closedSetups = await db
+    .prepare(
+      `SELECT id, trend, style, entry, tp, sl, status, created_at FROM setups
+       WHERE status IN ('CLOSED', 'CANCELLED') ORDER BY id DESC LIMIT 20`
+    )
+    .all();
   const judgedSetups = await db
     .prepare(
       `SELECT id, trend, style, entry, tp, sl, status, created_ts FROM setups
@@ -244,6 +250,7 @@ async function storageInfo(db) {
     scores: sc.results || [],
     open_setups: openSetups.results || [],
     pending_setups: pendingSetups.results || [],
+    closed_setups: closedSetups.results || [],
     judged_setups: judgedSetups.results || [],
     recent: recent.results || [],
   };
@@ -911,8 +918,7 @@ async function judgeSetups(db, candles) {
   return verdicts;
 }
 
-async function trackRecord(db) {
-  const rows = await db
+async function trackRecord(db) {  const rows = await db
     .prepare(`SELECT status, COUNT(*) AS c FROM setups GROUP BY status`)
     .all();
   const c = { OPEN: 0, WON: 0, LOST: 0 };
@@ -1251,6 +1257,136 @@ async function saveMemory(request, env) {
   }
 }
 
+// Open + pending orders the AI can act on (it only sees IDs via this block).
+async function openOrdersBlock(db) {
+  const rows = await db
+    .prepare(
+      `SELECT id, trend, style, entry, tp, sl, status FROM setups
+       WHERE status IN ('OPEN', 'PENDING') ORDER BY id ASC`
+    )
+    .all();
+  if (!rows.results?.length) return "[OPEN ORDERS] none.";
+  return (
+    "[OPEN ORDERS] (dùng đúng ID khi ra lệnh):\n" +
+    rows.results
+      .map(
+        (r) =>
+          `- #${r.id} ${r.status} ${r.style} ${r.trend} E${r.entry} TP${r.tp} SL${r.sl}`
+      )
+      .join("\n")
+      .slice(0, 1500)
+  );
+}
+
+// Execute order commands the AI wrote in its reply. Returns action log.
+// Commands: MỞ LỆNH <LONG|SHORT> [SWING] entry X TP Y SL Z · ĐÓNG LỆNH #id [giá P]
+// KÍCH HOẠT #id (pending→mở) · XÓA LỆNH CHỜ #id (xóa hẳn) · HỦY LỆNH CHỜ #id (lưu vết)
+async function executeCommands(db, text, marketData) {
+  const actions = [];
+  const lastPx = marketLast(marketData);
+
+  for (const m of text.matchAll(
+    /mở lệnh\s+(swing\s+)?(long|short)\b[^0-9]*entry\s*(-?[\d.]+)[^0-9]*tp\s*(-?[\d.]+)[^0-9]*sl\s*(-?[\d.]+)/gi
+  )) {
+    const style = m[1] ? "SWING" : "SCALPING";
+    const probe = extractSetup(
+      `Xu hướng: ${m[2]}\nEntry: ${m[3]}\nTP: ${m[4]}\nSL: ${m[5]}`
+    );
+    if (!probe || !probe.valid) {
+      actions.push({ cmd: "open", result: "rejected", reason: "số không hợp lệ" });
+      continue;
+    }
+    probe.style = style;
+    const status =
+      lastPx == null ||
+      Math.abs(probe.entry - lastPx) > PENDING_GAP ||
+      (probe.rr != null && probe.rr < 1)
+        ? "PENDING"
+        : "OPEN";
+    const ins = await db
+      .prepare(
+        `INSERT INTO setups(created_ts, trend, style, entry, tp, sl, status)
+         VALUES(?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        Math.floor(Date.now() / 1000),
+        probe.trend,
+        probe.style,
+        probe.entry,
+        probe.tp,
+        probe.sl,
+        status
+      )
+      .run();
+    const id = Number(ins.meta?.last_row_id) || null;
+    await addUsage(db, byteLen(JSON.stringify(probe)));
+    actions.push({ cmd: "open", id, status, trend: probe.trend });
+  }
+
+  for (const m of text.matchAll(/đóng lệnh\s*#(\d+)(?:[^\d]*?([\d.]+))?/gi)) {
+    const id = Number(m[1]);
+    const price = m[2] != null ? Number(m[2]) : lastPx;
+    const row = await db
+      .prepare(`SELECT status FROM setups WHERE id = ?`)
+      .bind(id)
+      .first();
+    if (!row || row.status !== "OPEN") {
+      actions.push({ cmd: "close", id, result: "not-open" });
+      continue;
+    }
+    await db
+      .prepare(
+        `UPDATE setups SET status = 'CLOSED', judged_at = datetime('now'), note = ?
+         WHERE id = ?`
+      )
+      .bind(
+        `AI đóng tay${Number.isFinite(price) ? ` @${price}` : ""} (không tính thắng/thua)`,
+        id
+      )
+      .run();
+    actions.push({ cmd: "close", id, result: "closed" });
+  }
+
+  for (const m of text.matchAll(/kích hoạt\s*#(\d+)/gi)) {
+    const id = Number(m[1]);
+    const row = await db
+      .prepare(`SELECT status FROM setups WHERE id = ?`)
+      .bind(id)
+      .first();
+    if (!row) {
+      actions.push({ cmd: "activate", id, result: "not-found" });
+      continue;
+    }
+    if (row.status !== "PENDING") {
+      actions.push({ cmd: "activate", id, result: "not-pending" });
+      continue;
+    }
+    await db
+      .prepare(
+        `UPDATE setups SET status = 'OPEN', activated_ts = ?,
+         note = 'AI kích hoạt tay' WHERE id = ?`
+      )
+      .bind(Math.floor(Date.now() / 1000), id)
+      .run();
+    actions.push({ cmd: "activate", id, result: "opened" });
+  }
+
+  for (const m of text.matchAll(/xóa lệnh chờ\s*#(\d+)/gi)) {
+    const id = Number(m[1]);
+    const del = await db
+      .prepare(`DELETE FROM setups WHERE id = ? AND status = 'PENDING'`)
+      .bind(id)
+      .run();
+    actions.push({
+      cmd: "delete",
+      id,
+      result: (del.meta?.changes || 0) > 0 ? "deleted" : "not-pending",
+    });
+  }
+
+  return actions;
+}
+
 // Workers AI: no API key, no region block. Response normalized to
 // Gemini shape so the frontend is unchanged. Old context from D1 is
 // injected into every chat call.
@@ -1265,6 +1401,7 @@ async function chatWithAI(request, env) {
 
     let memoryBlock = "";
     let track = "";
+    let orders = "";
     let storage = null;
     const md = describeMarket(marketData);
     const curPx = marketLast(marketData);
@@ -1291,6 +1428,11 @@ async function chatWithAI(request, env) {
       } catch {
         track = "";
       }
+      try {
+        orders = await openOrdersBlock(env.DB);
+      } catch {
+        orders = "";
+      }
 
       if (md.snapshot) {
         await env.DB.prepare(
@@ -1316,6 +1458,14 @@ Explain each call with theory, in order:
 3. Kỹ thuật: nêu phương pháp (BOS/CHoCH, liquidity, S/R...).
 
 Always give a SCALP entry. Give a SWING entry (hold >1h) ONLY when the entry is beautiful: likely a peak or bottom backed by trend projection (4H/1D structure, strong support/resistance, projected future path). If no swing-quality entry exists, write "Swing: — (chờ ...)" naming exactly what you are waiting for. Suggest pending orders (BUY LIMIT / SELL STOP) with 3–10+ price levels across scenarios. An entry more than $2 from current market is a PENDING order: state its trigger condition. When the trend invalidates a pending order, cancel it by writing exactly "HỦY LỆNH CHỜ #id" with a one-line reason (cancelled orders are never scored).
+
+You have live order powers. Use them ONLY when the user asks or the trend clearly demands it, writing the command verbatim in your reply:
+- MỞ LỆNH LONG entry 4140 TP 4145 SL 4138 (or SHORT; add SWING for swing) — opens a tracked order.
+- ĐÓNG LỆNH #id (optional: GIÁ 4142) — closes an open order, no win/loss scored.
+- KÍCH HOẠT #id — moves a pending order to open.
+- XÓA LỆNH CHỜ #id — deletes a pending order permanently.
+- HỦY LỆNH CHỜ #id — cancels but keeps the record.
+The open/pending orders with IDs are listed in context; never invent an ID.
 
 Direction check before answering: for TĂNG/LONG, TP must be ABOVE entry and SL BELOW entry; for GIẢM/SHORT, TP BELOW entry and SL ABOVE entry. Never output a LONG with TP below entry. Minimum RR 1:1 (reward at least equals risk); if RR would be worse, do not force a market entry — give a pending zone at a peak/bottom instead.
 
@@ -1367,6 +1517,7 @@ Track record and lessons to stay consistent with:`;
             (macro ? macro + "\n" : "") +
             (tech ? tech + "\n" : "") +
             (track ? track + "\n" : "") +
+            (orders ? orders + "\n" : "") +
             (memoryBlock ? memoryBlock + "\n" : "") +
             "User question:\n" +
             prompt +
@@ -1382,7 +1533,17 @@ Track record and lessons to stay consistent with:`;
 
     let setupStatus = null;
     let setupId = null;
+    let actions = [];
     if (env.DB) {
+      // Order commands the AI wrote: open/close/activate/delete.
+      try {
+        actions = await executeCommands(env.DB, text, marketData);
+      } catch {
+        actions = [];
+      }
+      const explicitOpen = actions.some(
+        (a) => a.cmd === "open" && a.id != null
+      );
       // AI-cancelled pendings: "HỦY LỆNH CHỜ #id" anywhere in the reply.
       // Cancelled orders are never judged WON/LOST.
       const cancels = [
@@ -1399,8 +1560,10 @@ Track record and lessons to stay consistent with:`;
           .run();
       }
       // Selective saving: only what helps future analysis.
+      // An explicit MỞ LỆNH already saved the order: skip the setup block
+      // to avoid a duplicate row.
       const tagged = /\[phân tích\]/i.test(prompt);
-      const setup = extractSetup(text);
+      const setup = explicitOpen ? null : extractSetup(text);
       // Geometrically invalid setups (TP/SL on the wrong sides) are junk:
       // never backtested, never memorized (unless explicitly tagged).
       const usable = setup && setup.valid;
@@ -1468,6 +1631,7 @@ Track record and lessons to stay consistent with:`;
       storage,
       setup_status: setupStatus,
       setup_id: setupId,
+      actions,
     });
   } catch (error) {
     return json({ error: error.message }, 500);

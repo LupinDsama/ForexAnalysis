@@ -495,6 +495,17 @@
   white-space: pre-wrap;
 }
 
+.msg.system {
+  align-self: center;
+  background: var(--seg-bg);
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  max-width: 95%;
+  text-align: center;
+}
+
 .msg.ai {
   align-self: flex-start;
   background: var(--bubble-ai);
