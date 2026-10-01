@@ -155,7 +155,7 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 | Bảng | Nội dung |
 |---|---|
 | `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `kb` (25 kiến thức nền: drivers vàng + phương pháp/RR/rủi ro, luôn nạp vào prompt), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
-| `setups` | setup số học được (trend đã sanitize theo số, + `created_ts` + `activated_ts`, status OPEN/PENDING/WON/LOST/CANCELLED) — PENDING kích hoạt khi nến chạm entry, CANCELLED khi AI viết "HỦY LỆNH CHỜ #id", không bao giờ chấm WON/LOST |
+| `setups` | setup số học được (trend đã sanitize theo số, + `created_ts` + `activated_ts`, status OPEN/PENDING/WON/LOST/CANCELLED) — PENDING khi entry cách giá >$1.5, không rõ giá, hoặc RR<1 (tối thiểu 1:1); setup hình học sai (TP/SL cùng phía) bị loại, không backtest. Kích hoạt khi nến chạm entry, CANCELLED khi AI viết "HỦY LỆNH CHỜ #id", không bao giờ chấm WON/LOST |
 | `scores` | điểm từng pattern (`SCALPING LONG`...): scalp thắng +1, swing thắng +3, thua -1, kèm won/lost — pattern điểm dương thành cơ sở trong digest, nạp vào prompt |
 | `snapshots` | nến gọn `[[t,o,h,l,c],...]` mỗi lần chat |
 | `news_cache` | payload tin vĩ mô + `updated_at` |

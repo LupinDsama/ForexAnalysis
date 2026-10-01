@@ -71,6 +71,29 @@ export default {
       return json(await getMacroNews(env.DB));
     }
 
+    // Debug helper (pure math, no secrets/DB): validate setup geometry.
+    if (url.pathname === "/api/debug-validate" && request.method === "POST") {
+      try {
+        const b = await request.json();
+        const s = extractSetup(
+          `Xu hướng: ${b.trend}\nEntry: ${b.entry}\nTP: ${b.tp}\nSL: ${b.sl}`
+        );
+        if (!s) return json({ valid: false, reason: "unparseable" });
+        const lastPx = Number(b.market);
+        const status =
+          !s.valid
+            ? "INVALID"
+            : lastPx == null || !Number.isFinite(lastPx) ||
+                Math.abs(s.entry - lastPx) > PENDING_GAP ||
+                (s.rr != null && s.rr < 1)
+              ? "PENDING"
+              : "OPEN";
+        return json({ valid: s.valid, trend: s.trend, rr: s.rr, status });
+      } catch (e) {
+        return json({ error: e.message }, 400);
+      }
+    }
+
     if (url.pathname === "/api/whereami") {
       const trace = await (
         await fetch("https://www.cloudflare.com/cdn-cgi/trace")
@@ -688,25 +711,33 @@ function extractSetup(text) {
   const sl = parseNum(get("sl", "cắt lỗ"));
   if (entry == null || tp == null || sl == null) return null;
   const t = get("xu hướng").toUpperCase();
-  let trend = /GIẢM|DOWN|SHORT|SELL/.test(t)
+  let trend = /GIẢM|GIAM|DOWN|SHORT|SELL/.test(t)
     ? "SHORT"
-    : /TĂNG|UP|LONG|BUY/.test(t)
+    : /TĂNG|TANG|UP|LONG|BUY/.test(t)
       ? "LONG"
       : "SIDEWAYS";
-  // Sanitize: numbers decide when the label contradicts them.
-  // LONG needs TP above entry and SL below; SHORT the reverse.
-  // (E.g. LONG with TP below entry is really a SHORT.)
-  const longOk = tp > entry && sl < entry;
-  const shortOk = tp < entry && sl > entry;
+  // Direction geometry: LONG needs SL < entry < TP; SHORT needs TP < entry < SL.
+  // Fix a contradicting label; reject numbers that fit neither side (junk).
+  const longOk = sl < entry && entry < tp;
+  const shortOk = tp < entry && entry < sl;
   if (trend === "LONG" && !longOk) trend = shortOk ? "SHORT" : "SIDEWAYS";
   else if (trend === "SHORT" && !shortOk) trend = longOk ? "LONG" : "SIDEWAYS";
   const style = /SWING/.test(get("kiểu").toUpperCase()) ? "SWING" : "SCALPING";
+  const risk = Math.abs(entry - sl);
+  const reward = Math.abs(tp - entry);
+  const rr = risk > 0 ? Math.round((reward / risk) * 100) / 100 : null;
+  const valid =
+    (trend === "LONG" && longOk) ||
+    (trend === "SHORT" && shortOk) ||
+    (trend === "SIDEWAYS" && (longOk || shortOk));
   return {
     trend,
     style,
     entry,
     tp,
     sl,
+    rr,
+    valid,
     pending: get("lệnh chờ", "lệnh"),
     scalp: get("scalp"),
     swing: get("swing"),
@@ -749,8 +780,8 @@ function judgeCandles(marketData) {  // Finest series available for verdicts: 1m
   return [];
 }
 
-// Entry $2+ away from market = pending order, else market order.
-const PENDING_GAP = 2.0;
+// Entry $1.5+ away from market = pending order, else market order.
+const PENDING_GAP = 1.5;
 
 async function judgeSetups(db, candles) {
   if (!candles.length) return [];
@@ -1253,9 +1284,7 @@ async function chatWithAI(request, env) {
 
     const systemInstruction = `You are a Vietnamese trading chatbot for an XAU/USD dashboard. Chat naturally like a knowledgeable friend: concise, direct, a little personality, but every call stays grounded in data. Always reply in Vietnamese WITH FULL DIACRITICS (đầy đủ dấu), even when the user types without them. Use Markdown (bullets "- ", **bold** prices).
 
-Think like an analyst: candles first, then macro news + memory + track record of your own past setups, reason step by step, then conclude. Vary phrasing. OK to stand aside when unclear. Learn from your WON/LOST history — avoid repeating losing patterns.
-
-Think like an analyst: candles first, then macro news + memory + track record of your own past setups, reason step by step, then conclude. Vary phrasing. OK to stand aside when unclear. Learn from your WON/LOST history — avoid repeating losing patterns.
+Think like an analyst: candles first, then macro news + memory + track record of your own past setups, reason step by step, then conclude. Vary phrasing. Be decisive: when the edge is real, give the setup with conviction and a clear invalidation (SL); only stand aside when truly no edge, saying plainly what would change your mind. Learn from your WON/LOST history — avoid repeating losing patterns.
 
 Start every answer with one line "Trọng tâm: ..." restating what the user is really asking, then answer exactly that focus before any setup.
 
@@ -1268,7 +1297,7 @@ Explain each call with theory, in order:
 
 Always give a SCALP entry. Give a SWING entry (hold >1h) ONLY when the entry is beautiful: likely a peak or bottom backed by trend projection (4H/1D structure, strong support/resistance, projected future path). If no swing-quality entry exists, write "Swing: — (chờ ...)" naming exactly what you are waiting for. Suggest pending orders (BUY LIMIT / SELL STOP) with 3–10+ price levels across scenarios. An entry more than $2 from current market is a PENDING order: state its trigger condition. When the trend invalidates a pending order, cancel it by writing exactly "HỦY LỆNH CHỜ #id" with a one-line reason (cancelled orders are never scored).
 
-Direction check before answering: for TĂNG/LONG, TP must be ABOVE entry and SL BELOW entry; for GIẢM/SHORT, TP BELOW entry and SL ABOVE entry. Never output a LONG with TP below entry.
+Direction check before answering: for TĂNG/LONG, TP must be ABOVE entry and SL BELOW entry; for GIẢM/SHORT, TP BELOW entry and SL ABOVE entry. Never output a LONG with TP below entry. Minimum RR 1:1 (reward at least equals risk); if RR would be worse, do not force a market entry — give a pending zone at a peak/bottom instead.
 
 You MUST end every answer with this exact block. ONE trend value. Fill every line (use "—" only if truly unknown):
 
@@ -1347,11 +1376,17 @@ Track record and lessons to stay consistent with:`;
       // Selective saving: only what helps future analysis.
       const tagged = /\[phân tích\]/i.test(prompt);
       const setup = extractSetup(text);
-      if (setup) {
-        // Entry far from market = pending order, else market order.
+      // Geometrically invalid setups (TP/SL on the wrong sides) are junk:
+      // never backtested, never memorized (unless explicitly tagged).
+      const usable = setup && setup.valid;
+      if (usable) {
+        // Entry far from market, unknown market, or RR < 1 (min 1:1) →
+        // PENDING waiting for a peak/bottom entry instead of a market order.
         const lastPx = marketLast(marketData);
         const status =
-          lastPx != null && Math.abs(setup.entry - lastPx) > PENDING_GAP
+          lastPx == null ||
+          Math.abs(setup.entry - lastPx) > PENDING_GAP ||
+          (setup.rr != null && setup.rr < 1)
             ? "PENDING"
             : "OPEN";
         await env.DB.prepare(
@@ -1383,7 +1418,7 @@ Track record and lessons to stay consistent with:`;
           .bind(lesson)
           .run();
         await addUsage(env.DB, byteLen(lesson));
-      } else if (setup) {
+      } else if (usable) {
         // Compact setup summary only — chit-chat is not saved.
         const body = text.replace(/```setup[\s\S]*?```/, "").trim();
         const entry =
