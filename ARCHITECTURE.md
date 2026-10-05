@@ -101,6 +101,8 @@ Chat boost ──► fetch tươi cả 6 khung (1m/5m/15m/1h/4h/1D)
 - Frontend convert `datetime/open/high/low/close` (string) → `{time (unix), o/h/l/c}` cho chart.
   Giờ Twelve bị ép `timezone=UTC` ở Worker và parse UTC tường minh ở client
   (chuỗi không múi giờ mà parse local sẽ lệch verdict hàng giờ).
+  Nến cuối tuần bị lọc bỏ (T7 cả ngày, T6 từ 21h, CN trước 21h UTC) nên chart
+  và AI không thấy thị trường nghỉ.
 - Mỗi request Twelve = 1 credit. Free ~800/ngày; app đếm trong `localStorage`
   (`xau_req_count_YYYY-MM-DD`), chạm ~750 thì dừng request và báo.
 

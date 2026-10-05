@@ -18,6 +18,7 @@ import {
   getNews,
   getLive,
   touchLive,
+  isTradingTime,
   saveMemory,
   cleanStorage,
 } from "./services/api";
@@ -245,6 +246,11 @@ function App() {
       if (stop || !Number.isFinite(price)) return;
       lastTickPerf.current = performance.now();
       const tickSec = Math.floor((timeMs || Date.now()) / 1000);
+      // No weekend candles: market is closed, ticks would paint flat bars.
+      if (!isTradingTime(tickSec)) {
+        setLiveTick({ price, time: timeMs || Date.now(), source: source || "", halted: true });
+        return;
+      }
       setLiveTick({ price, time: timeMs || Date.now(), source: source || "" });
       for (const tf of TIMEFRAMES) {
         const bound = TF_BOUNDS[tf.key];
@@ -579,13 +585,19 @@ function App() {
             <span className="live-wrap">
               {liveStatus === "live" && liveTick ? (
                 <span className="live-on">
-                  ● LIVE {liveTick.price} {liveTick.source || ""}
-                  {nextLiveAt
-                    ? ` (${formatCountdown(nextLiveAt - now)})`
-                    : ""}
-                  {performance.now() - lastTickPerf.current > 600_000
-                    ? " (giá cũ)"
-                    : ""}
+                  {liveTick.halted ? (
+                    <>Thị trường nghỉ cuối tuần</>
+                  ) : (
+                    <>
+                      ● LIVE {liveTick.price} {liveTick.source || ""}
+                      {nextLiveAt
+                        ? ` (${formatCountdown(nextLiveAt - now)})`
+                        : ""}
+                      {performance.now() - lastTickPerf.current > 600_000
+                        ? " (giá cũ)"
+                        : ""}
+                    </>
+                  )}
                 </span>
               ) : liveStatus === "connecting" ? (
                 <span className="muted">Đang nối live...</span>

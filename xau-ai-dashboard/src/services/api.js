@@ -118,6 +118,18 @@ function parseTwelveTime(s) {
   return Math.floor(Date.parse(iso) / 1000);
 }
 
+// Gold spot rests on weekends (UTC): all of Saturday, Friday from 21:00,
+// Sunday before 21:00. Hours shift ~1h with US daylight saving; close enough.
+export function isTradingTime(unixSec) {
+  const d = new Date(unixSec * 1000);
+  const day = d.getUTCDay();
+  const hour = d.getUTCHours();
+  if (day === 6) return false;
+  if (day === 0 && hour < 21) return false;
+  if (day === 5 && hour >= 21) return false;
+  return true;
+}
+
 export function convertCandles(values) {
   if (!Array.isArray(values)) return [];
   return [...values]
@@ -138,7 +150,8 @@ export function convertCandles(values) {
         Number.isFinite(c.open) &&
         Number.isFinite(c.high) &&
         Number.isFinite(c.low) &&
-        Number.isFinite(c.close)
+        Number.isFinite(c.close) &&
+        isTradingTime(c.time)
     );
 }
 
