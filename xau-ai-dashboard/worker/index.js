@@ -196,6 +196,70 @@ async function addUsage(db, n) {
     .run();
 }
 
+// 1 pip XAUUSD = 0.1 giá. Ngày tính theo giờ VN (UTC+7).
+const PIP = 0.1;
+
+function vnDayStartSec(nowSec) {
+  return Math.floor((nowSec + 7 * 3600) / 86400) * 86400 - 7 * 3600;
+}
+
+// Kết quả hôm nay: timeline thắng/thua + tổng pip + điểm margin.
+// Margin khởi điểm 0: tổng âm → -1, tổng vượt 1000 → +1.
+async function dailyResults(db) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const start = vnDayStartSec(nowSec);
+  const rows = await db
+    .prepare(
+      `SELECT id, trend, style, entry, tp, sl, status, judged_at FROM setups
+       WHERE status IN ('WON', 'LOST')
+       AND judged_at >= datetime(?, 'unixepoch')
+       ORDER BY judged_at ASC`
+    )
+    .bind(start)
+    .all();
+  let wonPips = 0;
+  let lostPips = 0;
+  let wonCount = 0;
+  let lostCount = 0;
+  const list = [];
+  for (const r of rows.results || []) {
+    const exit = r.status === "WON" ? r.tp : r.sl;
+    const pips = Math.round((Math.abs(exit - r.entry) / PIP) * 10) / 10;
+    if (r.status === "WON") {
+      wonPips += pips;
+      wonCount++;
+    } else {
+      lostPips += pips;
+      lostCount++;
+    }
+    list.push({
+      id: r.id,
+      trend: r.trend,
+      style: r.style,
+      entry: r.entry,
+      exit,
+      pips: r.status === "WON" ? pips : -pips,
+      status: r.status,
+      judged_at: r.judged_at,
+    });
+  }
+  wonPips = Math.round(wonPips * 10) / 10;
+  lostPips = Math.round(lostPips * 10) / 10;
+  const net = Math.round((wonPips - lostPips) * 10) / 10;
+  const margin = net < 0 ? -1 : net > 1000 ? 1 : 0;
+  const day = new Date((start + 7 * 3600) * 1000)
+    .toISOString()
+    .slice(0, 10);
+  return {
+    day,
+    won: { pips: wonPips, count: wonCount },
+    lost: { pips: lostPips, count: lostCount },
+    net,
+    margin,
+    list,
+  };
+}
+
 async function storageInfo(db) {
   const usage = await db
     .prepare(`SELECT value FROM meta WHERE key = 'usage_bytes'`)
@@ -258,6 +322,7 @@ async function storageInfo(db) {
     pending_setups: pendingSetups.results || [],
     closed_setups: closedSetups.results || [],
     judged_setups: judgedSetups.results || [],
+    results: await dailyResults(db).catch(() => null),
     recent: recent.results || [],
   };
 }
@@ -979,13 +1044,14 @@ async function judgeSetups(db, candles) {
   }
   await db
     .prepare(
-      `DELETE FROM setups WHERE status != 'OPEN' AND judged_at < datetime('now', '-90 days')`
+      `DELETE FROM setups WHERE status != 'OPEN' AND judged_at < datetime('now', '-48 hours')`
     )
     .run();
   return verdicts;
 }
 
-async function trackRecord(db) {  const rows = await db
+async function trackRecord(db) {
+  const rows = await db
     .prepare(`SELECT status, COUNT(*) AS c FROM setups GROUP BY status`)
     .all();
   const c = { OPEN: 0, WON: 0, LOST: 0 };
@@ -1031,7 +1097,22 @@ async function trackRecord(db) {  const rows = await db
         .join("\n")
         .slice(0, 400);
   }
-  return s.slice(0, 1600);
+  try {
+    const dr = await dailyResults(db);
+    const sign = (n) => (n >= 0 ? "+" : "") + n;
+    s +=
+      `\nHÔM NAY (${dr.day}): thắng ${dr.won.pips} pip/${dr.won.count} lệnh, ` +
+      `thua ${dr.lost.pips} pip/${dr.lost.count} lệnh, ` +
+      `tổng ${sign(dr.net)} pip, margin ${sign(dr.margin)}.`;
+    if (dr.margin < 0) {
+      s += " Đang âm: siết kỷ luật, chỉ vào setup RR tốt có xác nhận gấp đôi.";
+    } else if (dr.margin > 0) {
+      s += " Đang bay: giữ kỷ luật, không tăng size bừa.";
+    }
+  } catch {
+    // margin line is best-effort
+  }
+  return s.slice(0, 2000);
 }
 
 // Casual gate against accidental taps — NOT real security: this constant
@@ -1096,11 +1177,13 @@ async function storageClean(request, env) {
       )
       .run();
 
-    // 4. Setups: judged older than 30 days go.
+    // 4. Setups: judged/cancelled/closed older than 48h go.
+    // Stale pendings (never touched in 7 days) go too.
     const stDel = await db
       .prepare(
-        `DELETE FROM setups WHERE status != 'OPEN'
-         AND judged_at < datetime('now', '-30 days')`
+        `DELETE FROM setups WHERE
+           (status != 'OPEN' AND judged_at < datetime('now', '-48 hours'))
+           OR (status = 'PENDING' AND created_ts < strftime('%s', 'now') - 604800)`
       )
       .run();
 

@@ -39,7 +39,9 @@ ForexAnalysis/                      # repo root = site Pages (branch deploy)
     │   │   ├── Controls.jsx        # nút Chart ON/OFF + quota Twelve Data
     │   │   ├── Analysis.jsx        # giá/change 6 khung + giờ cập nhật
     │   │   ├── Chat.jsx            # bóng chat, markdown, thẻ Setup, ảnh chart, Super Boost
-    │   │   ├── Orders.jsx          # dropdown lệnh đang mở (scroll, tự refresh khi mở)
+    │   │   ├── Orders.jsx          # dropdown lệnh (mở/chờ/đóng, scroll, tự refresh khi mở)
+    │   │   ├── Results.jsx         # timeline thắng/thua hôm nay + tổng pip + margin
+    │   │   ├── Results.jsx         # timeline thắng/thua hôm nay + tổng pip + margin
     │   │   ├── News.jsx            # list tin vĩ mô + refresh
     │   │   └── Memory.jsx          # dung lượng D1 + điểm pattern + lưu tay + dọn kho (cổng pass)
     │   └── services/
@@ -161,7 +163,7 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 | Bảng | Nội dung |
 |---|---|
 | `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `kb` (25 kiến thức nền: drivers vàng + phương pháp/RR/rủi ro, luôn nạp vào prompt), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
-| `setups` | setup số học được (trend đã sanitize theo số, + `created_ts` + `activated_ts`, status OPEN/PENDING/WON/LOST/CANCELLED) — OPEN khi entry cách giá ≤$2, PENDING khi xa hơn/không rõ giá/RR<1 (tối thiểu 1:1); setup hình học sai (TP/SL cùng phía) bị loại, không backtest. Kích hoạt khi nến chạm entry, CANCELLED khi AI viết "HỦY LỆNH CHỜ #id", không bao giờ chấm WON/LOST |
+| `setups` | setup số học được (trend đã sanitize theo số, + `created_ts` + `activated_ts`, status OPEN/PENDING/WON/LOST/CANCELLED) — OPEN khi entry cách giá ≤$2, PENDING khi xa hơn/không rõ giá/RR<1 (tối thiểu 1:1); setup hình học sai (TP/SL cùng phía) bị loại, không backtest. Kích hoạt khi nến chạm entry, CANCELLED khi AI viết "HỦY LỆNH CHỜ #id", không bao giờ chấm WON/LOST. Thắng/thua quá 48h tự xóa |
 | `scores` | điểm từng pattern (`SCALPING LONG`...): scalp thắng +1, swing thắng +3, thua -1, kèm won/lost — pattern điểm dương thành cơ sở trong digest, nạp vào prompt |
 | `snapshots` | nến gọn `[[t,o,h,l,c],...]` mỗi lần chat |
 | `news_cache` | payload tin vĩ mô + `updated_at` |
@@ -189,8 +191,8 @@ thành từng khung ──► series.update() tại chỗ
 | `/api/xauusd?interval=` | GET | `1min/5min/15min/1h/4h/1day`, outputsize 500 (intraday) / 365 daily (~1 năm), cùng 1 credit | JSON Twelve (`values[]`) |
 | `/api/chat` | POST | `{prompt, marketData, boost}` | `{candidates:[...], storage}` |
 | `/api/memory` | POST | `{kind: rule/note, content}` | `{ok, storage}` |
-| `/api/storage` | GET | — | `{used_bytes, limit_bytes, tables, scores, open_setups[≤20], recent[10]}` |
-| `/api/storage/clean` | POST | `{password}` — cổng chống bấm nhầm (KHÔNG phải bảo mật thật, key nằm public) | `{ok, stats, storage}` — xóa snapshot >7 ngày (giữ 10 mới nhất), nén snapshot >3 ngày còn 50 nến cuối, analyses giữ 100 mới nhất (giữ hết lesson/rule/note), setups đã chấm >30 ngày; recompute usage |
+| `/api/storage` | GET | — | `{used_bytes, limit_bytes, tables, scores, open_setups[≤20], pending_setups[≤20], closed_setups[≤20], judged_setups[≤20], results, recent[10]}` — `results` = thắng/thua hôm nay (giờ VN): timeline sớm-trước + tổng pip + margin (0 / âm→-1 / >1000→+1), 1 pip = 0.1 giá |
+| `/api/storage/clean` | POST | `{password}` — cổng chống bấm nhầm (KHÔNG phải bảo mật thật, key nằm public) | `{ok, stats, storage}` — xóa snapshot >7 ngày (giữ 10 mới nhất), nén snapshot >3 ngày còn 50 nến cuối, analyses giữ 100 mới nhất (giữ hết lesson/rule/note), setups đã chấm/hủy/đóng >48h + pending thiu >7 ngày; recompute usage |
 | `/api/news[?refresh=1]` | GET | — | `{events[≤15], headlines[≤8], updated_at}` |
 | `/api/live` | GET | — | `{price, time, source}` (+ `cached`/`stale` khi phù hợp). Nguồn theo thứ tự: Swissquote XAU/USD → gold-api → Yahoo GC=F. Chart gộp tick thành nến (`series.update`), nút Lệnh bật/tắt markers |
 | `/api/touch` | POST | `{price, time}` — kiểm tra lệnh chờ mỗi tick live 30s, không tốn Twelve | `{ok, activated: [ids]}` — kích hoạt khi giá đi qua entry sau lúc đặt |

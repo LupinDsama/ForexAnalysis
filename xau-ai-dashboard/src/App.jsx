@@ -7,6 +7,7 @@ import Chat from "./components/Chat";
 import Memory from "./components/Memory";
 import News from "./components/News";
 import Orders from "./components/Orders";
+import Results from "./components/Results";
 import {
   getXAUUSD,
   askAI,
@@ -621,6 +622,7 @@ function App() {
             emptyText="Chưa có lệnh đóng/hủy"
             onRefresh={refreshStorage}
           />
+          <Results results={storage?.results} onRefresh={refreshStorage} />
           <Analysis
             data={data}
             timeframes={TIMEFRAMES}
