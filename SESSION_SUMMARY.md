@@ -22,6 +22,7 @@ Ngày: 28–30/09/2026. Từ project Vite trắng đến web live có AI + trí 
 | 14 | Sửa lệch múi giờ verdict | Twelve ép `timezone=UTC` + parse UTC tường minh; reset toàn bộ verdict cũ |
 | 15 | UI | iOS/Terminal/Huawei + sáng/tối (tasteskill), markdown + thẻ Setup + ảnh chart + RSI-14 + markers lệnh + dropdowns + dọn kho (cổng pass) + footer Fexxwer/LupinDsama |
 | 16 | Docs | `ARCHITECTURE.md` (kiến trúc) + file này |
+| 17 | Kết quả ngày + margin | Timeline thắng/thua hôm nay (giờ VN, sớm-trước) + tổng pip (1 pip = 0.1 giá) + margin (0 / âm→-1 / >1000→+1); thắng/thua quá 48h tự xóa; margin nạp vào prompt để AI kỷ luật theo |
 
 ## 2. Sự cố đáng nhớ và cách xử lý
 
