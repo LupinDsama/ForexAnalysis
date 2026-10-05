@@ -191,7 +191,7 @@ thành từng khung ──► series.update() tại chỗ
 | `/api/xauusd?interval=` | GET | `1min/5min/15min/1h/4h/1day`, outputsize 500 (intraday) / 365 daily (~1 năm), cùng 1 credit | JSON Twelve (`values[]`) |
 | `/api/chat` | POST | `{prompt, marketData, boost}` | `{candidates:[...], storage}` |
 | `/api/memory` | POST | `{kind: rule/note, content}` | `{ok, storage}` |
-| `/api/storage` | GET | — | `{used_bytes, limit_bytes, tables, scores, open_setups[≤20], pending_setups[≤20], closed_setups[≤20], judged_setups[≤20], results, recent[10]}` — `results` = thắng/thua hôm nay (giờ VN): timeline sớm-trước + tổng pip + margin (0 / âm→-1 / >1000→+1), 1 pip = 0.1 giá |
+| `/api/storage` | GET | — | `{used_bytes, limit_bytes, tables, scores, open_setups[≤20], pending_setups[≤20], closed_setups[≤20], judged_setups[≤20], results, recent[10]}` — `results` = thắng/thua hôm nay (giờ VN): timeline sớm-trước + tổng pip + tiền theo lot + margin (0 / âm→-1 / >1000→+1), 1 pip = 0.1 giá, 1 lot chuẩn = 100 oz → $10/pip/lot |
 | `/api/storage/clean` | POST | `{password}` — cổng chống bấm nhầm (KHÔNG phải bảo mật thật, key nằm public) | `{ok, stats, storage}` — xóa snapshot >7 ngày (giữ 10 mới nhất), nén snapshot >3 ngày còn 50 nến cuối, analyses giữ 100 mới nhất (giữ hết lesson/rule/note), setups đã chấm/hủy/đóng >48h + pending thiu >7 ngày; recompute usage |
 | `/api/news[?refresh=1]` | GET | — | `{events[≤15], headlines[≤8], updated_at}` |
 | `/api/live` | GET | — | `{price, time, source}` (+ `cached`/`stale` khi phù hợp). Nguồn theo thứ tự: Swissquote XAU/USD → gold-api → Yahoo GC=F. Chart gộp tick thành nến (`series.update`), nút Lệnh bật/tắt markers |

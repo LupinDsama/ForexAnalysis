@@ -913,6 +913,26 @@
   font-weight: 800;
 }
 
+.lot-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.lot-input {
+  width: 64px;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12.5px;
+  font-family: var(--font);
+}
+
 /* ---------- news ---------- */
 
 .news {

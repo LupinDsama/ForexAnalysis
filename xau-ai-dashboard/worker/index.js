@@ -1044,7 +1044,7 @@ async function judgeSetups(db, candles) {
   }
   await db
     .prepare(
-      `DELETE FROM setups WHERE status != 'OPEN' AND judged_at < datetime('now', '-48 hours')`
+      `DELETE FROM setups WHERE status != 'OPEN' AND judged_at < datetime('now', '-30 days')`
     )
     .run();
   return verdicts;
@@ -1177,12 +1177,12 @@ async function storageClean(request, env) {
       )
       .run();
 
-    // 4. Setups: judged/cancelled/closed older than 48h go.
+    // 4. Setups: judged/cancelled/closed older than 30 days go.
     // Stale pendings (never touched in 7 days) go too.
     const stDel = await db
       .prepare(
         `DELETE FROM setups WHERE
-           (status != 'OPEN' AND judged_at < datetime('now', '-48 hours'))
+           (status != 'OPEN' AND judged_at < datetime('now', '-30 days'))
            OR (status = 'PENDING' AND created_ts < strftime('%s', 'now') - 604800)`
       )
       .run();
