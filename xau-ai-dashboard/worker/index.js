@@ -334,6 +334,9 @@ async function storageInfoResponse(env) {
 }
 
 const LIVE_TTL_MS = 30_000;
+// Quotes older than this are treated as failed (a wrong price is worse
+// than no price). Server clock only — never the client wall clock.
+const LIVE_MAX_AGE_MS = 15 * 60_000;
 // Spot sources, closest first. Swissquote BBO tracks Twelve spot within
 // cents; gold-api is a fresh fallback; Yahoo futures lags and drifts dollars.
 const LIVE_SOURCES = [
@@ -397,6 +400,9 @@ async function livePrice(env) {
         });
         if (!r.ok) throw new Error(s.name + " HTTP " + r.status);
         const parsed = parseLiveBody(s.name, await r.json(), nowMs);
+        if (nowMs - parsed.time > LIVE_MAX_AGE_MS) {
+          throw new Error(s.name + " quote too old");
+        }
         const out = { ...parsed, source: s.name };
         if (env.DB) {
           try {
@@ -430,7 +436,9 @@ async function livePrice(env) {
           .first();
         if (stale?.value) {
           const c = JSON.parse(stale.value);
-          return json({ ...c, stale: true });
+          if (c.time && nowMs - c.time <= LIVE_MAX_AGE_MS) {
+            return json({ ...c, stale: true });
+          }
         }
       } catch {
         // ignore
