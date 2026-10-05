@@ -176,9 +176,9 @@ Panel Bộ nhớ D1 hiện `đã dùng / 5GB`, số dòng từng bảng, 5 mục
 ### 4.5. Giá live (không tốn Twelve)
 
 ```text
-Browser ──poll 30s──► GET /api/live ──► Yahoo GC=F (COMEX futures, cache 30s
+Browser ──poll 30s──► GET /api/live ──► Swissquote XAU/USD → gold-api → Yahoo GC=F (COMEX futures, cache 30s
 ở Worker, fallback giá cũ khi Yahoo lỗi) ──► gộp tick thành nến đang hình
-thành từng khung ──► series.update() tại chỗ
+thành từng khung ──► series.update() tại chỗ. Giá quá 15 phút bị loại (thà không hiện còn hơn hiện sai)
 ```
 - Twelve chỉ còn: sử ban đầu, ⟳ tay, chat phân tích.
 - TV WebSocket nối thẳng đã test: local qua, github.io bị từ chối origin.
