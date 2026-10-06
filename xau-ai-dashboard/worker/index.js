@@ -91,7 +91,7 @@ export default {
             ? "INVALID"
             : lastPx == null || !Number.isFinite(lastPx) ||
                 Math.abs(s.entry - lastPx) > PENDING_GAP ||
-                (s.rr != null && s.rr < 1)
+                (s.rr != null && s.rr > 1)
               ? "PENDING"
               : "OPEN";
         return json({ valid: s.valid, trend: s.trend, rr: s.rr, status });
@@ -881,7 +881,8 @@ function extractSetup(text) {
   const style = /SWING/.test(get("kiểu").toUpperCase()) ? "SWING" : "SCALPING";
   const risk = Math.abs(entry - sl);
   const reward = Math.abs(tp - entry);
-  const rr = risk > 0 ? Math.round((reward / risk) * 100) / 100 : null;
+  // RR = Risk chia Reward: dưới 1 là lãi hơn lỗ (VD 0.4).
+  const rr = reward > 0 ? Math.round((risk / reward) * 100) / 100 : null;
   const valid =
     (trend === "LONG" && longOk) ||
     (trend === "SHORT" && shortOk) ||
@@ -1458,7 +1459,7 @@ async function executeCommands(db, text, marketData) {
     const status =
       lastPx == null ||
       Math.abs(probe.entry - lastPx) > PENDING_GAP ||
-      (probe.rr != null && probe.rr < 1)
+      (probe.rr != null && probe.rr > 1)
         ? "PENDING"
         : "OPEN";
     const ins = await db
@@ -1631,7 +1632,7 @@ You have live order powers. Use them ONLY when the user asks or the trend clearl
 - HỦY LỆNH CHỜ #id — cancels but keeps the record.
 The open/pending orders with IDs are listed in context; never invent an ID.
 
-Direction check before answering: for TĂNG/LONG, TP must be ABOVE entry and SL BELOW entry; for GIẢM/SHORT, TP BELOW entry and SL ABOVE entry. Never output a LONG with TP below entry. Minimum RR 1:1 (reward at least equals risk); if RR would be worse, do not force a market entry — give a pending zone at a peak/bottom instead.
+Direction check before answering: for TĂNG/LONG, TP must be ABOVE entry and SL BELOW entry; for GIẢM/SHORT, TP BELOW entry and SL ABOVE entry. Never output a LONG with TP below entry. RR is Risk divided by Reward and MUST be below 1 (risk smaller than reward); if RR would be 1 or worse, do not force a market entry — give a pending zone at a peak/bottom instead.
 
 You MUST end every answer with this exact block. ONE trend value. Fill every line (use "—" only if truly unknown):
 
@@ -1641,7 +1642,7 @@ Kiểu: SCALPING | SWING
 Entry: <giá>
 TP: <mục tiêu>
 SL: <cắt lỗ>
-RR: <1:x, tính từ Entry/TP/SL>
+RR: <risk/reward, VD 0.4>
 Tự tin: <1-10>
 Lệnh chờ: <BUY LIMIT / SELL STOP các mức, hoặc —>
 Scalp: <entry scalping hoặc —>
@@ -1659,7 +1660,7 @@ Kiểu: SWING
 Entry: 4136.44
 TP: 4150.00 / 4165.00
 SL: 4128.00
-RR: 1:2.5
+RR: 0.4
 Tự tin: 8
 Lệnh chờ: BUY LIMIT 4132 / 4128 / 4124 / 4120
 Scalp: 4136.44
@@ -1740,13 +1741,13 @@ Track record and lessons to stay consistent with:`;
       // never backtested, never memorized (unless explicitly tagged).
       const usable = setup && setup.valid;
       if (usable) {
-        // Entry far from market, unknown market, or RR < 1 (min 1:1) →
-        // PENDING waiting for a peak/bottom entry instead of a market order.
+        // Entry far from market, unknown market, or RR > 1 (risk bigger
+        // than reward) → PENDING waiting for a peak/bottom entry.
         const lastPx = marketLast(marketData);
         const status =
           lastPx == null ||
           Math.abs(setup.entry - lastPx) > PENDING_GAP ||
-          (setup.rr != null && setup.rr < 1)
+          (setup.rr != null && setup.rr > 1)
             ? "PENDING"
             : "OPEN";
         setupStatus = status;

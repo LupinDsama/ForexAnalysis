@@ -127,7 +127,7 @@ POST /api/chat { prompt, marketData, boost }
   │  6. Gọi Workers AI (Qwen3-30B)
   │  7. Lưu chọn lọc: setup số học được → validate hình học (LONG cần
   │     SL<entry<TP, SHORT cần TP<entry<SL, sai thì sửa nhãn hoặc loại) →
-  │     bảng setups (entry cách giá >$2/không rõ giá/RR<1 thành PENDING;
+  │     bảng setups (entry cách giá >$2/không rõ giá/RR>1 thành PENDING;
   │     kèm created_ts); prompt có [phân tích] → lesson full;
   │     setup đủ số → analysis gọn; chat xã giao → không lưu gì;
   │     chat hỗ trợ @khung-giờ để focus sâu 1 khung và ép dấu tiếng Việt đầy đủ.
@@ -165,7 +165,7 @@ fetch mới = XML lịch tuần Faireconomy (USD High/Medium + High khác, tối
 | Bảng | Nội dung |
 |---|---|
 | `memories` | `analysis` (setup đủ số, gọn; chỉ tỉa loại này khi quá 500), `lesson` ([phân tích] full + bài học backtest), `rule`/`note` (lưu tay, KHÔNG bao giờ bị dọn), `kb` (25 kiến thức nền: drivers vàng + phương pháp/RR/rủi ro, luôn nạp vào prompt), `knowledge` (digest nén từ stats + bài học, rebuild mỗi lần dọn/có verdict mới) |
-| `setups` | setup số học được (trend đã sanitize theo số, + `created_ts` + `activated_ts`, status OPEN/PENDING/WON/LOST/CANCELLED) — OPEN khi entry cách giá ≤$2, PENDING khi xa hơn/không rõ giá/RR<1 (tối thiểu 1:1); setup hình học sai (TP/SL cùng phía) bị loại, không backtest. Kích hoạt khi nến chạm entry, CANCELLED khi AI viết "HỦY LỆNH CHỜ #id", không bao giờ chấm WON/LOST. Thắng/thua quá 48h tự xóa |
+| `setups` | setup số học được (trend đã sanitize theo số, RR = Risk/Reward phải <1 mới lãi hơn lỗ, + `created_ts` + `activated_ts`, status OPEN/PENDING/WON/LOST/CANCELLED) — OPEN khi entry cách giá ≤$2, PENDING khi xa hơn/không rõ giá/RR>1; setup hình học sai (TP/SL cùng phía) bị loại, không backtest. Kích hoạt khi nến chạm entry, CANCELLED khi AI viết "HỦY LỆNH CHỜ #id", không bao giờ chấm WON/LOST. Thắng/thua quá 30 ngày tự xóa |
 | `scores` | điểm từng pattern (`SCALPING LONG`...): scalp thắng +1, swing thắng +3, thua -1, kèm won/lost — pattern điểm dương thành cơ sở trong digest, nạp vào prompt |
 | `snapshots` | nến gọn `[[t,o,h,l,c],...]` mỗi lần chat |
 | `news_cache` | payload tin vĩ mô + `updated_at` |
